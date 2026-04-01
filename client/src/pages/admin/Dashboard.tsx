@@ -37,8 +37,8 @@ export default function AdminDashboard() {
                 <Building2 className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{brandsLoading ? <Skeleton className="h-7 w-8" /> : brands?.length ?? 0}</p>
-                <p className="text-xs text-muted-foreground">Active Brands</p>
+                <span className="text-2xl font-bold block">{brandsLoading ? <Skeleton className="h-7 w-8 inline-block" /> : brands?.length ?? 0}</span>
+                <span className="text-xs text-muted-foreground block">Active Brands</span>
               </div>
             </div>
           </CardContent>
@@ -51,8 +51,8 @@ export default function AdminDashboard() {
                 <FileText className="h-5 w-5 text-chart-2" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{statsLoading ? <Skeleton className="h-7 w-8" /> : stats?.total ?? 0}</p>
-                <p className="text-xs text-muted-foreground">Total Posts</p>
+                <span className="text-2xl font-bold block">{statsLoading ? <Skeleton className="h-7 w-8 inline-block" /> : stats?.total ?? 0}</span>
+                <span className="text-xs text-muted-foreground block">Total Posts</span>
               </div>
             </div>
           </CardContent>
@@ -65,8 +65,8 @@ export default function AdminDashboard() {
                 <Calendar className="h-5 w-5 text-chart-5" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{statsLoading ? <Skeleton className="h-7 w-8" /> : stats?.scheduled ?? 0}</p>
-                <p className="text-xs text-muted-foreground">Scheduled</p>
+                <span className="text-2xl font-bold block">{statsLoading ? <Skeleton className="h-7 w-8 inline-block" /> : stats?.scheduled ?? 0}</span>
+                <span className="text-xs text-muted-foreground block">Scheduled</span>
               </div>
             </div>
           </CardContent>
@@ -79,8 +79,8 @@ export default function AdminDashboard() {
                 <Bell className="h-5 w-5 text-destructive" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{unreadCount ?? 0}</p>
-                <p className="text-xs text-muted-foreground">Unread Alerts</p>
+                <span className="text-2xl font-bold block">{unreadCount ?? 0}</span>
+                <span className="text-xs text-muted-foreground block">Unread Alerts</span>
               </div>
             </div>
           </CardContent>
@@ -110,8 +110,8 @@ export default function AdminDashboard() {
                         <Building2 className="h-4 w-4 text-primary" />
                       </div>
                       <div>
-                        <p className="text-sm font-medium">{brand.name}</p>
-                        <p className="text-xs text-muted-foreground capitalize">{brand.clientTier} tier</p>
+                        <span className="text-sm font-medium block">{brand.name}</span>
+                        <span className="text-xs text-muted-foreground block capitalize">{brand.clientTier} tier</span>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -125,7 +125,7 @@ export default function AdminDashboard() {
             ) : (
               <div className="text-center py-8 text-muted-foreground">
                 <Building2 className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">No brands yet</p>
+                <span className="text-sm block">No brands yet</span>
                 <Button variant="outline" size="sm" className="mt-2" onClick={() => setLocation("/admin/brands")}>
                   Add First Brand
                 </Button>
@@ -148,10 +148,10 @@ export default function AdminDashboard() {
                 {recentPosts.slice(0, 5).map((post) => (
                   <div key={post.id} className="flex items-center justify-between p-3 rounded-lg bg-secondary/50">
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate">{post.content.substring(0, 60)}...</p>
-                      <p className="text-xs text-muted-foreground">
+                      <span className="text-sm font-medium truncate block">{post.content.substring(0, 60)}...</span>
+                      <span className="text-xs text-muted-foreground block">
                         {post.scheduledAt ? new Date(post.scheduledAt).toLocaleDateString() : "No date"}
-                      </p>
+                      </span>
                     </div>
                     <Badge variant={post.status === "published" ? "default" : "secondary"} className="text-xs ml-2 shrink-0">
                       {POST_STATUS_LABELS[post.status as keyof typeof POST_STATUS_LABELS] || post.status}
@@ -162,7 +162,7 @@ export default function AdminDashboard() {
             ) : (
               <div className="text-center py-8 text-muted-foreground">
                 <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">No posts yet</p>
+                <span className="text-sm block">No posts yet</span>
                 <Button variant="outline" size="sm" className="mt-2" onClick={() => setLocation("/admin/ai")}>
                   Generate First Post
                 </Button>
@@ -191,8 +191,8 @@ export default function AdminDashboard() {
                 { label: "Total", value: stats.total, color: "text-foreground" },
               ].map((item) => (
                 <div key={item.label} className="text-center p-3 rounded-lg bg-secondary/30">
-                  <p className={`text-2xl font-bold ${item.color}`}>{item.value}</p>
-                  <p className="text-xs text-muted-foreground">{item.label}</p>
+                  <span className={`text-2xl font-bold block ${item.color}`}>{item.value}</span>
+                  <span className="text-xs text-muted-foreground block">{item.label}</span>
                 </div>
               ))}
             </div>

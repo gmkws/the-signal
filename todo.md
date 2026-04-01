@@ -93,3 +93,6 @@
 - [x] Client Service Spotlight page with tier-based access (Premium: edit, Managed: view-only)
 - [x] Service Spotlight nav items in sidebar (admin + client)
 - [x] Integrations page renamed (Social Accounts → Integrations) with Shopify section
+
+## Bug Fixes
+- [x] Fix: p cannot contain nested div error on /admin dashboard page (changed p tags to span tags)
