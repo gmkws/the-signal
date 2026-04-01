@@ -1,17 +1,8 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json } from "drizzle-orm/mysql-core";
 
-/**
- * Core user table backing auth flow.
- * Extend this file with additional tables as your product grows.
- * Columns use camelCase to match both database fields and generated types.
- */
+// ── Users ──────────────────────────────────────────────────────────────────
 export const users = mysqlTable("users", {
-  /**
-   * Surrogate primary key. Auto-incremented numeric value managed by the database.
-   * Use this for relations between tables.
-   */
   id: int("id").autoincrement().primaryKey(),
-  /** Manus OAuth identifier (openId) returned from the OAuth callback. Unique per user. */
   openId: varchar("openId", { length: 64 }).notNull().unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }),
@@ -25,4 +16,147 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
-// TODO: Add your tables here
+// ── Brands ─────────────────────────────────────────────────────────────────
+export const brands = mysqlTable("brands", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 200 }).notNull(),
+  slug: varchar("slug", { length: 100 }).notNull().unique(),
+  logoUrl: text("logoUrl"),
+  industry: varchar("industry", { length: 100 }),
+  location: varchar("location", { length: 200 }),
+  website: varchar("website", { length: 500 }),
+  // Brand voice settings stored as JSON
+  voiceSettings: json("voiceSettings").$type<{
+    tone: string;
+    style: string;
+    keywords: string[];
+    avoidWords: string[];
+    samplePosts: string[];
+    customInstructions: string;
+  }>(),
+  // Client tier: managed or premium
+  clientTier: mysqlEnum("clientTier", ["managed", "premium"]).default("managed").notNull(),
+  // Auto-post toggle
+  autoPostEnabled: boolean("autoPostEnabled").default(false).notNull(),
+  // Assigned client user ID (nullable for admin-only brands)
+  clientUserId: int("clientUserId"),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Brand = typeof brands.$inferSelect;
+export type InsertBrand = typeof brands.$inferInsert;
+
+// ── Social Accounts ────────────────────────────────────────────────────────
+export const socialAccounts = mysqlTable("social_accounts", {
+  id: int("id").autoincrement().primaryKey(),
+  brandId: int("brandId").notNull(),
+  platform: mysqlEnum("platform", ["facebook", "instagram"]).notNull(),
+  platformAccountId: varchar("platformAccountId", { length: 200 }).notNull(),
+  accountName: varchar("accountName", { length: 300 }),
+  accessToken: text("accessToken"),
+  tokenExpiresAt: timestamp("tokenExpiresAt"),
+  pageId: varchar("pageId", { length: 200 }),
+  instagramBusinessId: varchar("instagramBusinessId", { length: 200 }),
+  isConnected: boolean("isConnected").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SocialAccount = typeof socialAccounts.$inferSelect;
+export type InsertSocialAccount = typeof socialAccounts.$inferInsert;
+
+// ── Posts ───────────────────────────────────────────────────────────────────
+export const posts = mysqlTable("posts", {
+  id: int("id").autoincrement().primaryKey(),
+  brandId: int("brandId").notNull(),
+  // Content
+  content: text("content").notNull(),
+  imageUrl: text("imageUrl"),
+  // Content type categorization
+  contentType: mysqlEnum("contentType", [
+    "hey_tony",
+    "hook_solve",
+    "auditor_showcase",
+    "local_tips",
+    "machine_series",
+    "print_digital",
+    "custom"
+  ]).default("custom").notNull(),
+  // Scheduling
+  scheduledAt: timestamp("scheduledAt"),
+  publishedAt: timestamp("publishedAt"),
+  // Status workflow
+  status: mysqlEnum("status", [
+    "draft",
+    "scheduled",
+    "pending_review",
+    "approved",
+    "published",
+    "failed",
+    "paused"
+  ]).default("draft").notNull(),
+  // Platforms to post to
+  platforms: json("platforms").$type<string[]>(),
+  // Meta API response data
+  facebookPostId: varchar("facebookPostId", { length: 200 }),
+  instagramPostId: varchar("instagramPostId", { length: 200 }),
+  // AI generation metadata
+  aiGenerated: boolean("aiGenerated").default(false).notNull(),
+  // Who created/modified
+  createdBy: int("createdBy"),
+  lastEditedBy: int("lastEditedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Post = typeof posts.$inferSelect;
+export type InsertPost = typeof posts.$inferInsert;
+
+// ── Notifications ──────────────────────────────────────────────────────────
+export const notifications = mysqlTable("notifications", {
+  id: int("id").autoincrement().primaryKey(),
+  brandId: int("brandId").notNull(),
+  postId: int("postId"),
+  type: mysqlEnum("type", [
+    "pause_request",
+    "edit_request",
+    "approval",
+    "rejection",
+    "post_published",
+    "post_failed",
+    "system"
+  ]).notNull(),
+  title: varchar("title", { length: 300 }).notNull(),
+  message: text("message"),
+  // Who triggered it
+  fromUserId: int("fromUserId"),
+  // Who should see it
+  toRole: mysqlEnum("toRole", ["admin", "client"]).default("admin").notNull(),
+  isRead: boolean("isRead").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = typeof notifications.$inferInsert;
+
+// ── Analytics Snapshots ────────────────────────────────────────────────────
+export const analyticsSnapshots = mysqlTable("analytics_snapshots", {
+  id: int("id").autoincrement().primaryKey(),
+  brandId: int("brandId").notNull(),
+  postId: int("postId"),
+  platform: mysqlEnum("platform", ["facebook", "instagram"]).notNull(),
+  impressions: int("impressions").default(0),
+  reach: int("reach").default(0),
+  engagement: int("engagement").default(0),
+  likes: int("likes").default(0),
+  comments: int("comments").default(0),
+  shares: int("shares").default(0),
+  clicks: int("clicks").default(0),
+  snapshotDate: timestamp("snapshotDate").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AnalyticsSnapshot = typeof analyticsSnapshots.$inferSelect;
+export type InsertAnalyticsSnapshot = typeof analyticsSnapshots.$inferInsert;
