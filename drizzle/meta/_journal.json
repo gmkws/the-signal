@@ -8,6 +8,13 @@
       "when": 1775018292599,
       "tag": "0000_peaceful_nighthawk",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1775026978281,
+      "tag": "0001_young_stardust",
+      "breakpoints": true
     }
   ]
 }

@@ -15,6 +15,8 @@ export const CONTENT_TYPES = [
   "local_tips",
   "machine_series",
   "print_digital",
+  "shopify_product",
+  "service_spotlight",
   "custom",
 ] as const;
 
@@ -27,6 +29,8 @@ export const CONTENT_TYPE_LABELS: Record<ContentType, string> = {
   local_tips: "Local Business Tips",
   machine_series: "Your Website Is a Machine",
   print_digital: "Print + Digital",
+  shopify_product: "Shopify Product Spotlight",
+  service_spotlight: "Service Spotlight",
   custom: "Custom Post",
 };
 
@@ -63,6 +67,19 @@ export type ClientTier = (typeof CLIENT_TIERS)[number];
 
 export const PLATFORMS = ["facebook", "instagram"] as const;
 export type Platform = (typeof PLATFORMS)[number];
+
+// ── CTA Types ──────────────────────────────────────────────────────────────
+
+export const CTA_TYPES = ["call", "book_online", "dm", "visit_website", "custom"] as const;
+export type CtaType = (typeof CTA_TYPES)[number];
+
+export const CTA_TYPE_LABELS: Record<CtaType, string> = {
+  call: "Call Now",
+  book_online: "Book Online",
+  dm: "Send a DM",
+  visit_website: "Visit Website",
+  custom: "Custom CTA",
+};
 
 // ── Constants ──────────────────────────────────────────────────────────────
 

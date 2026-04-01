@@ -36,6 +36,23 @@ vi.mock("./db", () => ({
   getAllUsers: vi.fn().mockResolvedValue([]),
   upsertUser: vi.fn().mockResolvedValue(undefined),
   getUserByOpenId: vi.fn().mockResolvedValue(undefined),
+  // Shopify
+  getShopifyConnectionByBrandId: vi.fn().mockResolvedValue(null),
+  createShopifyConnection: vi.fn().mockResolvedValue({ id: 1 }),
+  updateShopifyConnection: vi.fn().mockResolvedValue(undefined),
+  deleteShopifyConnection: vi.fn().mockResolvedValue(undefined),
+  getShopifyProductsByBrandId: vi.fn().mockResolvedValue([]),
+  getShopifyProductForContent: vi.fn().mockResolvedValue(null),
+  upsertShopifyProduct: vi.fn().mockResolvedValue(undefined),
+  markShopifyProductUsed: vi.fn().mockResolvedValue(undefined),
+  // Services
+  getServicesByBrandId: vi.fn().mockResolvedValue([]),
+  getServiceById: vi.fn().mockResolvedValue(null),
+  getServiceForContent: vi.fn().mockResolvedValue(null),
+  createService: vi.fn().mockResolvedValue({ id: 1 }),
+  updateService: vi.fn().mockResolvedValue(undefined),
+  deleteService: vi.fn().mockResolvedValue(undefined),
+  markServiceUsed: vi.fn().mockResolvedValue(undefined),
 }));
 
 // ── Mock services ─────────────────────────────────────────────────────────
@@ -46,6 +63,14 @@ vi.mock("./services/contentEngine", () => ({
     suggestedImagePrompt: "A professional image",
   }),
   generatePostImage: vi.fn().mockResolvedValue("https://example.com/image.png"),
+  pickContentType: vi.fn().mockReturnValue("hey_tony"),
+}));
+
+vi.mock("./services/shopify", () => ({
+  validateShopifyConnection: vi.fn().mockResolvedValue({ valid: true, shopName: "Test Store" }),
+  fetchShopifyProducts: vi.fn().mockResolvedValue([]),
+  fetchShopifyCollections: vi.fn().mockResolvedValue([]),
+  transformShopifyProduct: vi.fn().mockReturnValue({ shopifyProductId: "123", brandId: 1, title: "Test Product" }),
 }));
 
 import * as db from "./db";
@@ -453,5 +478,243 @@ describe("analytics.summary", () => {
     const caller = appRouter.createCaller(createAdminContext());
     const result = await caller.analytics.summary({ brandId: 1 });
     expect(result).toEqual(mockSummary);
+  });
+});
+
+// ── Shopify Tests ─────────────────────────────────────────────────────────
+
+describe("shopify.getConnection", () => {
+  it("returns null when no connection exists", async () => {
+    vi.mocked(db.getShopifyConnectionByBrandId).mockResolvedValueOnce(null);
+
+    const caller = appRouter.createCaller(createAdminContext());
+    const result = await caller.shopify.getConnection({ brandId: 1 });
+    expect(result).toBeNull();
+  });
+
+  it("masks access token in response", async () => {
+    vi.mocked(db.getShopifyConnectionByBrandId).mockResolvedValueOnce({
+      id: 1, brandId: 1, shopDomain: "test.myshopify.com",
+      accessToken: "shpat_secret123", storeName: "Test Store",
+      isConnected: true, lastSyncAt: null, createdAt: new Date(), updatedAt: new Date(),
+    } as any);
+
+    const caller = appRouter.createCaller(createAdminContext());
+    const result = await caller.shopify.getConnection({ brandId: 1 });
+    expect(result).toBeDefined();
+    expect(result!.accessToken).toBe("••••••••");
+    expect(result!.storeName).toBe("Test Store");
+  });
+
+  it("rejects unauthorized client access", async () => {
+    vi.mocked(db.getBrandsByClientUserId).mockResolvedValueOnce([]);
+
+    const caller = appRouter.createCaller(createClientContext());
+    await expect(caller.shopify.getConnection({ brandId: 1 })).rejects.toThrow("FORBIDDEN");
+  });
+});
+
+describe("shopify.connect", () => {
+  it("allows admin to connect a Shopify store", async () => {
+    vi.mocked(db.getShopifyConnectionByBrandId).mockResolvedValueOnce(null);
+    vi.mocked(db.createShopifyConnection).mockResolvedValueOnce({ id: 1 } as any);
+
+    const caller = appRouter.createCaller(createAdminContext());
+    const result = await caller.shopify.connect({
+      brandId: 1,
+      shopDomain: "teststore",
+      accessToken: "shpat_test123",
+    });
+    expect(result).toHaveProperty("storeName", "Test Store");
+  });
+
+  it("rejects non-admin Shopify connection", async () => {
+    const caller = appRouter.createCaller(createClientContext());
+    await expect(caller.shopify.connect({
+      brandId: 1,
+      shopDomain: "test.myshopify.com",
+      accessToken: "shpat_test",
+    })).rejects.toThrow(NOT_ADMIN_ERR_MSG);
+  });
+});
+
+describe("shopify.disconnect", () => {
+  it("allows admin to disconnect Shopify", async () => {
+    const caller = appRouter.createCaller(createAdminContext());
+    const result = await caller.shopify.disconnect({ brandId: 1 });
+    expect(result).toEqual({ success: true });
+    expect(db.deleteShopifyConnection).toHaveBeenCalledWith(1);
+  });
+});
+
+describe("shopify.listProducts", () => {
+  it("returns products for admin", async () => {
+    const mockProducts = [{ id: 1, title: "Product 1" }];
+    vi.mocked(db.getShopifyProductsByBrandId).mockResolvedValueOnce(mockProducts as any);
+
+    const caller = appRouter.createCaller(createAdminContext());
+    const result = await caller.shopify.listProducts({ brandId: 1 });
+    expect(result).toEqual(mockProducts);
+  });
+});
+
+// ── Service Spotlight Tests ───────────────────────────────────────────────
+
+describe("service.list", () => {
+  it("returns services for admin", async () => {
+    const mockServices = [{ id: 1, name: "Roof Repair", brandId: 1 }];
+    vi.mocked(db.getServicesByBrandId).mockResolvedValueOnce(mockServices as any);
+
+    const caller = appRouter.createCaller(createAdminContext());
+    const result = await caller.service.list({ brandId: 1 });
+    expect(result).toEqual(mockServices);
+  });
+
+  it("rejects unauthorized client access", async () => {
+    vi.mocked(db.getBrandsByClientUserId).mockResolvedValueOnce([]);
+
+    const caller = appRouter.createCaller(createClientContext());
+    await expect(caller.service.list({ brandId: 1 })).rejects.toThrow("FORBIDDEN");
+  });
+});
+
+describe("service.create", () => {
+  it("allows admin to create a service", async () => {
+    vi.mocked(db.createService).mockResolvedValueOnce({ id: 1 } as any);
+
+    const caller = appRouter.createCaller(createAdminContext());
+    const result = await caller.service.create({
+      brandId: 1,
+      name: "Roof Repair",
+      description: "Full roof repair and replacement",
+      serviceAreas: ["Hillsboro", "Beaverton"],
+      ctaType: "call",
+      ctaPhone: "(503) 555-1234",
+    });
+    expect(result).toEqual({ id: 1 });
+    expect(db.createService).toHaveBeenCalled();
+  });
+
+  it("allows premium client to create a service", async () => {
+    vi.mocked(db.getBrandById).mockResolvedValueOnce({
+      id: 1, clientUserId: 2, clientTier: "premium",
+    } as any);
+    vi.mocked(db.createService).mockResolvedValueOnce({ id: 1 } as any);
+
+    const caller = appRouter.createCaller(createClientContext("premium"));
+    const result = await caller.service.create({
+      brandId: 1,
+      name: "Deep Cleaning",
+      ctaType: "book_online",
+    });
+    expect(result).toEqual({ id: 1 });
+  });
+
+  it("rejects managed client service creation", async () => {
+    vi.mocked(db.getBrandById).mockResolvedValueOnce({
+      id: 1, clientUserId: 2, clientTier: "managed",
+    } as any);
+
+    const caller = appRouter.createCaller(createClientContext("managed"));
+    await expect(caller.service.create({
+      brandId: 1,
+      name: "Test Service",
+      ctaType: "visit_website",
+    })).rejects.toThrow("Only admin or premium clients can manage services");
+  });
+});
+
+describe("service.update", () => {
+  it("allows admin to update a service", async () => {
+    vi.mocked(db.getServiceById).mockResolvedValueOnce({
+      id: 1, brandId: 1, name: "Old Name",
+    } as any);
+
+    const caller = appRouter.createCaller(createAdminContext());
+    const result = await caller.service.update({ id: 1, name: "New Name" });
+    expect(result).toEqual({ success: true });
+    expect(db.updateService).toHaveBeenCalledWith(1, { name: "New Name" });
+  });
+
+  it("rejects update for non-existent service", async () => {
+    vi.mocked(db.getServiceById).mockResolvedValueOnce(null);
+
+    const caller = appRouter.createCaller(createAdminContext());
+    await expect(caller.service.update({ id: 999, name: "Test" })).rejects.toThrow("NOT_FOUND");
+  });
+});
+
+describe("service.delete", () => {
+  it("allows admin to delete a service", async () => {
+    vi.mocked(db.getServiceById).mockResolvedValueOnce({
+      id: 1, brandId: 1, name: "Test",
+    } as any);
+
+    const caller = appRouter.createCaller(createAdminContext());
+    const result = await caller.service.delete({ id: 1 });
+    expect(result).toEqual({ success: true });
+    expect(db.deleteService).toHaveBeenCalledWith(1);
+  });
+
+  it("rejects managed client service deletion", async () => {
+    vi.mocked(db.getServiceById).mockResolvedValueOnce({
+      id: 1, brandId: 1, name: "Test",
+    } as any);
+    vi.mocked(db.getBrandById).mockResolvedValueOnce({
+      id: 1, clientUserId: 2, clientTier: "managed",
+    } as any);
+
+    const caller = appRouter.createCaller(createClientContext("managed"));
+    await expect(caller.service.delete({ id: 1 })).rejects.toThrow("FORBIDDEN");
+  });
+});
+
+// ── AI with Content Sources Tests ────────────────────────────────────────
+
+describe("ai.generatePost with content sources", () => {
+  it("checks Shopify and services when useContentSources is true", async () => {
+    vi.mocked(db.getBrandById).mockResolvedValueOnce({
+      id: 1, name: "GMK", voiceSettings: { tone: "Professional" },
+    } as any);
+    vi.mocked(db.getShopifyConnectionByBrandId).mockResolvedValueOnce({
+      id: 1, isConnected: true,
+    } as any);
+    vi.mocked(db.getServicesByBrandId).mockResolvedValueOnce([
+      { id: 1, name: "Roof Repair" },
+    ] as any);
+    vi.mocked(db.getShopifyProductForContent).mockResolvedValueOnce({
+      id: 1, title: "Product", description: "Desc", price: "29.99",
+      tags: [], collections: [], handle: "product",
+    } as any);
+    vi.mocked(db.getServiceForContent).mockResolvedValueOnce({
+      id: 1, name: "Roof Repair", description: "Fix roofs",
+      serviceAreas: ["Hillsboro"], ctaType: "call", ctaPhone: "555-1234",
+    } as any);
+
+    const caller = appRouter.createCaller(createAdminContext());
+    const result = await caller.ai.generatePost({
+      brandId: 1,
+      contentType: "hey_tony",
+      useContentSources: true,
+    });
+    expect(result).toHaveProperty("content");
+    expect(db.getShopifyConnectionByBrandId).toHaveBeenCalledWith(1);
+    expect(db.getServicesByBrandId).toHaveBeenCalledWith(1);
+  });
+
+  it("skips content sources when useContentSources is false", async () => {
+    vi.mocked(db.getBrandById).mockResolvedValueOnce({
+      id: 1, name: "GMK", voiceSettings: { tone: "Professional" },
+    } as any);
+
+    const caller = appRouter.createCaller(createAdminContext());
+    const result = await caller.ai.generatePost({
+      brandId: 1,
+      contentType: "custom",
+      useContentSources: false,
+    });
+    expect(result).toHaveProperty("content");
+    expect(db.getShopifyConnectionByBrandId).not.toHaveBeenCalled();
+    expect(db.getServicesByBrandId).not.toHaveBeenCalled();
   });
 });

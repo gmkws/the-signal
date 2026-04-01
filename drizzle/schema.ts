@@ -160,3 +160,83 @@ export const analyticsSnapshots = mysqlTable("analytics_snapshots", {
 
 export type AnalyticsSnapshot = typeof analyticsSnapshots.$inferSelect;
 export type InsertAnalyticsSnapshot = typeof analyticsSnapshots.$inferInsert;
+
+
+// ── Shopify Connections ────────────────────────────────────────────────────
+export const shopifyConnections = mysqlTable("shopify_connections", {
+  id: int("id").autoincrement().primaryKey(),
+  brandId: int("brandId").notNull().unique(), // One Shopify store per brand
+  shopDomain: varchar("shopDomain", { length: 300 }).notNull(), // e.g., "mystore.myshopify.com"
+  accessToken: text("accessToken").notNull(),
+  storeName: varchar("storeName", { length: 300 }),
+  isConnected: boolean("isConnected").default(true).notNull(),
+  lastSyncAt: timestamp("lastSyncAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ShopifyConnection = typeof shopifyConnections.$inferSelect;
+export type InsertShopifyConnection = typeof shopifyConnections.$inferInsert;
+
+// ── Shopify Products ───────────────────────────────────────────────────────
+export const shopifyProducts = mysqlTable("shopify_products", {
+  id: int("id").autoincrement().primaryKey(),
+  brandId: int("brandId").notNull(),
+  shopifyProductId: varchar("shopifyProductId", { length: 100 }).notNull(),
+  title: varchar("title", { length: 500 }).notNull(),
+  description: text("description"),
+  handle: varchar("handle", { length: 300 }),
+  productType: varchar("productType", { length: 200 }),
+  vendor: varchar("vendor", { length: 200 }),
+  tags: json("tags").$type<string[]>(),
+  // Primary image URL
+  imageUrl: text("imageUrl"),
+  // All image URLs
+  images: json("images").$type<string[]>(),
+  // Price info
+  price: varchar("price", { length: 50 }),
+  compareAtPrice: varchar("compareAtPrice", { length: 50 }),
+  // Inventory
+  inventoryQuantity: int("inventoryQuantity"),
+  // Collection names
+  collections: json("collections").$type<string[]>(),
+  // Status
+  status: varchar("status", { length: 50 }).default("active"),
+  // Used for content generation tracking
+  lastUsedInPostAt: timestamp("lastUsedInPostAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ShopifyProduct = typeof shopifyProducts.$inferSelect;
+export type InsertShopifyProduct = typeof shopifyProducts.$inferInsert;
+
+// ── Service Spotlight ──────────────────────────────────────────────────────
+export const services = mysqlTable("services", {
+  id: int("id").autoincrement().primaryKey(),
+  brandId: int("brandId").notNull(),
+  // Service details
+  name: varchar("name", { length: 300 }).notNull(),
+  description: text("description"),
+  // Service areas (cities, regions)
+  serviceAreas: json("serviceAreas").$type<string[]>(),
+  // Specials/seasonal offers
+  specials: text("specials"),
+  // CTA info
+  ctaType: mysqlEnum("ctaType", ["call", "book_online", "dm", "visit_website", "custom"]).default("visit_website"),
+  ctaText: varchar("ctaText", { length: 200 }),
+  ctaLink: varchar("ctaLink", { length: 500 }),
+  ctaPhone: varchar("ctaPhone", { length: 50 }),
+  // Before/after or project images
+  images: json("images").$type<string[]>(),
+  // Display order
+  displayOrder: int("displayOrder").default(0),
+  isActive: boolean("isActive").default(true).notNull(),
+  // Used for content generation tracking
+  lastUsedInPostAt: timestamp("lastUsedInPostAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Service = typeof services.$inferSelect;
+export type InsertService = typeof services.$inferInsert;

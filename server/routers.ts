@@ -5,9 +5,10 @@ import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
-import { generatePost, generatePostImage } from "./services/contentEngine";
-import type { ContentFormat } from "./services/contentEngine";
+import { generatePost, generatePostImage, pickContentType } from "./services/contentEngine";
+import type { ContentFormat, ContentSourceInfo } from "./services/contentEngine";
 import { MAX_BRANDS } from "@shared/types";
+import { validateShopifyConnection, fetchShopifyProducts, transformShopifyProduct, fetchShopifyCollections } from "./services/shopify";
 
 // ── Brand Router ───────────────────────────────────────────────────────────
 
@@ -154,7 +155,7 @@ const postRouter = router({
       brandId: z.number(),
       content: z.string().min(1),
       imageUrl: z.string().optional(),
-      contentType: z.enum(["hey_tony", "hook_solve", "auditor_showcase", "local_tips", "machine_series", "print_digital", "custom"]).default("custom"),
+      contentType: z.enum(["hey_tony", "hook_solve", "auditor_showcase", "local_tips", "machine_series", "print_digital", "shopify_product", "service_spotlight", "custom"]).default("custom"),
       scheduledAt: z.string().optional(),
       status: z.enum(["draft", "scheduled", "pending_review"]).default("draft"),
       platforms: z.array(z.string()).optional(),
@@ -181,7 +182,7 @@ const postRouter = router({
       id: z.number(),
       content: z.string().optional(),
       imageUrl: z.string().nullable().optional(),
-      contentType: z.enum(["hey_tony", "hook_solve", "auditor_showcase", "local_tips", "machine_series", "print_digital", "custom"]).optional(),
+      contentType: z.enum(["hey_tony", "hook_solve", "auditor_showcase", "local_tips", "machine_series", "print_digital", "shopify_product", "service_spotlight", "custom"]).optional(),
       scheduledAt: z.string().nullable().optional(),
       status: z.enum(["draft", "scheduled", "pending_review", "approved", "published", "failed", "paused"]).optional(),
       platforms: z.array(z.string()).optional(),
@@ -296,8 +297,9 @@ const aiRouter = router({
   generatePost: protectedProcedure
     .input(z.object({
       brandId: z.number(),
-      contentType: z.enum(["hey_tony", "hook_solve", "auditor_showcase", "local_tips", "machine_series", "print_digital", "custom"]).default("custom"),
+      contentType: z.enum(["hey_tony", "hook_solve", "auditor_showcase", "local_tips", "machine_series", "print_digital", "shopify_product", "service_spotlight", "custom"]).default("custom"),
       customTopic: z.string().optional(),
+      useContentSources: z.boolean().default(true),
     }))
     .mutation(async ({ ctx, input }) => {
       // Verify brand access
@@ -307,12 +309,68 @@ const aiRouter = router({
         throw new TRPCError({ code: "FORBIDDEN" });
       }
 
+      // Build content source info
+      let sourceInfo: ContentSourceInfo | undefined;
+      if (input.useContentSources) {
+        const shopifyConn = await db.getShopifyConnectionByBrandId(input.brandId);
+        const servicesData = await db.getServicesByBrandId(input.brandId);
+        const hasShopify = !!shopifyConn?.isConnected;
+        const hasServices = servicesData.length > 0;
+
+        sourceInfo = { hasShopify, hasServices };
+
+        if (hasShopify) {
+          const product = await db.getShopifyProductForContent(input.brandId);
+          if (product) {
+            sourceInfo.shopifyProduct = {
+              title: product.title,
+              description: product.description,
+              price: product.price,
+              compareAtPrice: product.compareAtPrice,
+              productType: product.productType,
+              tags: (product.tags as string[]) || [],
+              imageUrl: product.imageUrl,
+              collections: (product.collections as string[]) || [],
+              handle: product.handle,
+            };
+          }
+        }
+
+        if (hasServices) {
+          const service = await db.getServiceForContent(input.brandId);
+          if (service) {
+            sourceInfo.service = {
+              name: service.name,
+              description: service.description,
+              serviceAreas: (service.serviceAreas as string[]) || [],
+              specials: service.specials,
+              ctaType: service.ctaType,
+              ctaText: service.ctaText,
+              ctaLink: service.ctaLink,
+              ctaPhone: service.ctaPhone,
+              images: (service.images as string[]) || [],
+            };
+          }
+        }
+      }
+
       const result = await generatePost(
         brand.name,
         input.contentType as ContentFormat,
         brand.voiceSettings as any,
-        input.customTopic
+        input.customTopic,
+        sourceInfo
       );
+
+      // Mark the used content source as used for rotation tracking
+      if (result.contentType === "shopify_product" && sourceInfo?.shopifyProduct) {
+        const product = await db.getShopifyProductForContent(input.brandId);
+        if (product) await db.markShopifyProductUsed(product.id);
+      }
+      if (result.contentType === "service_spotlight" && sourceInfo?.service) {
+        const service = await db.getServiceForContent(input.brandId);
+        if (service) await db.markServiceUsed(service.id);
+      }
 
       return result;
     }),
@@ -475,6 +533,208 @@ const analyticsRouter = router({
     }),
 });
 
+// ── Shopify Router ────────────────────────────────────────────────────────
+
+const shopifyRouter = router({
+  getConnection: protectedProcedure
+    .input(z.object({ brandId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin") {
+        const brands = await db.getBrandsByClientUserId(ctx.user.id);
+        if (!brands.some(b => b.id === input.brandId)) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+      }
+      const conn = await db.getShopifyConnectionByBrandId(input.brandId);
+      if (!conn) return null;
+      return { ...conn, accessToken: "••••••••" };
+    }),
+
+  connect: adminProcedure
+    .input(z.object({
+      brandId: z.number(),
+      shopDomain: z.string().min(1),
+      accessToken: z.string().min(1),
+    }))
+    .mutation(async ({ input }) => {
+      // Normalize domain
+      let domain = input.shopDomain.trim();
+      if (!domain.includes(".")) domain = `${domain}.myshopify.com`;
+      domain = domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
+
+      // Validate connection
+      const validation = await validateShopifyConnection(domain, input.accessToken);
+      if (!validation.valid) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: validation.error || "Invalid Shopify credentials" });
+      }
+
+      // Check if already connected
+      const existing = await db.getShopifyConnectionByBrandId(input.brandId);
+      if (existing) {
+        await db.updateShopifyConnection(existing.id, {
+          shopDomain: domain,
+          accessToken: input.accessToken,
+          storeName: validation.shopName || null,
+          isConnected: true,
+        });
+        return { id: existing.id, storeName: validation.shopName };
+      }
+
+      const result = await db.createShopifyConnection({
+        brandId: input.brandId,
+        shopDomain: domain,
+        accessToken: input.accessToken,
+        storeName: validation.shopName || null,
+      });
+      return { id: result.id, storeName: validation.shopName };
+    }),
+
+  disconnect: adminProcedure
+    .input(z.object({ brandId: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteShopifyConnection(input.brandId);
+      return { success: true };
+    }),
+
+  syncProducts: adminProcedure
+    .input(z.object({ brandId: z.number() }))
+    .mutation(async ({ input }) => {
+      const conn = await db.getShopifyConnectionByBrandId(input.brandId);
+      if (!conn || !conn.isConnected) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "No active Shopify connection" });
+      }
+
+      // Fetch products and collections
+      const [products, collections] = await Promise.all([
+        fetchShopifyProducts(conn.shopDomain, conn.accessToken),
+        fetchShopifyCollections(conn.shopDomain, conn.accessToken),
+      ]);
+
+      // Upsert products
+      let synced = 0;
+      for (const product of products) {
+        const transformed = transformShopifyProduct(product, input.brandId);
+        await db.upsertShopifyProduct(transformed as any);
+        synced++;
+      }
+
+      // Update last sync time
+      await db.updateShopifyConnection(conn.id, { lastSyncAt: new Date() });
+
+      return { synced, total: products.length };
+    }),
+
+  listProducts: protectedProcedure
+    .input(z.object({ brandId: z.number(), limit: z.number().default(100) }))
+    .query(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin") {
+        const brands = await db.getBrandsByClientUserId(ctx.user.id);
+        if (!brands.some(b => b.id === input.brandId)) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+      }
+      return db.getShopifyProductsByBrandId(input.brandId, input.limit);
+    }),
+});
+
+// ── Service Spotlight Router ──────────────────────────────────────────────
+
+const serviceRouter = router({
+  list: protectedProcedure
+    .input(z.object({ brandId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin") {
+        const brands = await db.getBrandsByClientUserId(ctx.user.id);
+        if (!brands.some(b => b.id === input.brandId)) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+      }
+      return db.getServicesByBrandId(input.brandId);
+    }),
+
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const service = await db.getServiceById(input.id);
+      if (!service) throw new TRPCError({ code: "NOT_FOUND" });
+      if (ctx.user.role !== "admin") {
+        const brands = await db.getBrandsByClientUserId(ctx.user.id);
+        if (!brands.some(b => b.id === service.brandId)) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+      }
+      return service;
+    }),
+
+  create: protectedProcedure
+    .input(z.object({
+      brandId: z.number(),
+      name: z.string().min(1).max(300),
+      description: z.string().optional(),
+      serviceAreas: z.array(z.string()).optional(),
+      specials: z.string().optional(),
+      ctaType: z.enum(["call", "book_online", "dm", "visit_website", "custom"]).default("visit_website"),
+      ctaText: z.string().optional(),
+      ctaLink: z.string().optional(),
+      ctaPhone: z.string().optional(),
+      images: z.array(z.string()).optional(),
+      displayOrder: z.number().default(0),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin") {
+        const brand = await db.getBrandById(input.brandId);
+        if (!brand || brand.clientUserId !== ctx.user.id || brand.clientTier !== "premium") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Only admin or premium clients can manage services" });
+        }
+      }
+      return db.createService(input as any);
+    }),
+
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().min(1).max(300).optional(),
+      description: z.string().optional(),
+      serviceAreas: z.array(z.string()).optional(),
+      specials: z.string().optional(),
+      ctaType: z.enum(["call", "book_online", "dm", "visit_website", "custom"]).optional(),
+      ctaText: z.string().optional(),
+      ctaLink: z.string().optional(),
+      ctaPhone: z.string().optional(),
+      images: z.array(z.string()).optional(),
+      displayOrder: z.number().optional(),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const service = await db.getServiceById(input.id);
+      if (!service) throw new TRPCError({ code: "NOT_FOUND" });
+      if (ctx.user.role !== "admin") {
+        const brand = await db.getBrandById(service.brandId);
+        if (!brand || brand.clientUserId !== ctx.user.id || brand.clientTier !== "premium") {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+      }
+      const { id, ...data } = input;
+      await db.updateService(id, data as any);
+      return { success: true };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const service = await db.getServiceById(input.id);
+      if (!service) throw new TRPCError({ code: "NOT_FOUND" });
+      if (ctx.user.role !== "admin") {
+        const brand = await db.getBrandById(service.brandId);
+        if (!brand || brand.clientUserId !== ctx.user.id || brand.clientTier !== "premium") {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+      }
+      await db.deleteService(input.id);
+      return { success: true };
+    }),
+});
+
 // ── User Management Router (Admin) ─────────────────────────────────────────
 
 const userRouter = router({
@@ -502,6 +762,8 @@ export const appRouter = router({
   social: socialRouter,
   analytics: analyticsRouter,
   user: userRouter,
+  shopify: shopifyRouter,
+  service: serviceRouter,
 });
 
 export type AppRouter = typeof appRouter;

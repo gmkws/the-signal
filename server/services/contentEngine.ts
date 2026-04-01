@@ -1,5 +1,6 @@
 /**
  * AI Content Engine for generating social media posts in brand voice.
+ * Supports multiple content sources: general brand voice, Shopify products, and Service Spotlight.
  * Uses the built-in LLM helper for text generation and image generation service for visuals.
  */
 
@@ -13,6 +14,8 @@ export type ContentFormat =
   | "local_tips"
   | "machine_series"
   | "print_digital"
+  | "shopify_product"
+  | "service_spotlight"
   | "custom";
 
 export interface BrandVoice {
@@ -22,6 +25,37 @@ export interface BrandVoice {
   avoidWords: string[];
   samplePosts: string[];
   customInstructions: string;
+}
+
+export interface ShopifyProductData {
+  title: string;
+  description: string | null;
+  price: string | null;
+  compareAtPrice: string | null;
+  productType: string | null;
+  tags: string[];
+  imageUrl: string | null;
+  collections: string[];
+  handle: string | null;
+}
+
+export interface ServiceData {
+  name: string;
+  description: string | null;
+  serviceAreas: string[];
+  specials: string | null;
+  ctaType: string | null;
+  ctaText: string | null;
+  ctaLink: string | null;
+  ctaPhone: string | null;
+  images: string[];
+}
+
+export interface ContentSourceInfo {
+  hasShopify: boolean;
+  hasServices: boolean;
+  shopifyProduct?: ShopifyProductData;
+  service?: ServiceData;
 }
 
 export interface GeneratedContent {
@@ -43,19 +77,112 @@ const FORMAT_PROMPTS: Record<ContentFormat, string> = {
 
   print_digital: `Create a post highlighting the full-stack capability of combining digital and physical assets. Showcase how professional printing services (business cards, signage, branded merchandise) complement a strong digital presence. Emphasize the rare combination of web development, AI automation, AND in-house print production.`,
 
+  shopify_product: `Create a product spotlight post that naturally showcases a product from the brand's online store. Do NOT make it a hard sales pitch — weave it into a story, tip, or lifestyle context. Show how the product solves a problem or fits into the customer's life. Include the product name and key details naturally. End with a soft CTA to check it out or shop the link.`,
+
+  service_spotlight: `Create a service spotlight post that highlights a specific service the brand offers. Focus on the value and transformation the service provides, not just listing features. Use storytelling — paint a picture of the problem the customer faces and how this service solves it. Include the service area to build local relevance. End with a clear, direct CTA (call, book online, DM, or visit website).`,
+
   custom: `Create a professional, engaging social media post. Make it informative and actionable with a clear call-to-action.`,
 };
 
 /**
- * Generate a social media post using AI in the brand's voice
+ * Determine which content type to generate based on available data sources.
+ * Implements the rotation logic:
+ * - Has Shopify? Mix product posts into rotation
+ * - Has Service Spotlight? Mix service posts into rotation
+ * - Has both? Use both in rotation
+ * - Always generate general brand voice content regardless
+ */
+export function pickContentType(
+  sourceInfo: ContentSourceInfo,
+  requestedType?: ContentFormat
+): ContentFormat {
+  // If a specific type was requested, use it
+  if (requestedType && requestedType !== "custom") {
+    return requestedType;
+  }
+
+  // Build the rotation pool
+  const generalTypes: ContentFormat[] = [
+    "hey_tony", "hook_solve", "auditor_showcase",
+    "local_tips", "machine_series", "print_digital",
+  ];
+
+  const pool: ContentFormat[] = [...generalTypes];
+
+  // Add Shopify product posts to the rotation if connected and product available
+  if (sourceInfo.hasShopify && sourceInfo.shopifyProduct) {
+    pool.push("shopify_product");
+    pool.push("shopify_product"); // Weight it slightly
+  }
+
+  // Add service spotlight posts to the rotation if services exist
+  if (sourceInfo.hasServices && sourceInfo.service) {
+    pool.push("service_spotlight");
+    pool.push("service_spotlight"); // Weight it slightly
+  }
+
+  // Pick randomly from the pool
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+/**
+ * Build additional context for the AI based on content source data
+ */
+function buildSourceContext(
+  contentType: ContentFormat,
+  sourceInfo: ContentSourceInfo
+): string {
+  let context = "";
+
+  if (contentType === "shopify_product" && sourceInfo.shopifyProduct) {
+    const p = sourceInfo.shopifyProduct;
+    context += `\n\nPRODUCT DATA (use this as the basis for the post):
+- Product Name: ${p.title}
+- Description: ${p.description || "No description available"}
+- Price: ${p.price ? `$${p.price}` : "Contact for pricing"}${p.compareAtPrice ? ` (was $${p.compareAtPrice})` : ""}
+- Product Type: ${p.productType || "General"}
+- Tags: ${p.tags?.join(", ") || "None"}
+- Collections: ${p.collections?.join(", ") || "General"}
+${p.handle ? `- Product Link Handle: ${p.handle}` : ""}
+
+IMPORTANT: This is ONE post in a content rotation. The brand also posts educational tips, local business advice, and value-first content. This product post should feel natural and not overly salesy. Weave the product into a story or tip format.`;
+  }
+
+  if (contentType === "service_spotlight" && sourceInfo.service) {
+    const s = sourceInfo.service;
+    context += `\n\nSERVICE DATA (use this as the basis for the post):
+- Service Name: ${s.name}
+- Description: ${s.description || "Professional service"}
+- Service Areas: ${s.serviceAreas?.join(", ") || "Local area"}
+${s.specials ? `- Current Special/Offer: ${s.specials}` : ""}
+- CTA Type: ${s.ctaType || "visit_website"}
+${s.ctaText ? `- CTA Text: ${s.ctaText}` : ""}
+${s.ctaLink ? `- CTA Link: ${s.ctaLink}` : ""}
+${s.ctaPhone ? `- Phone: ${s.ctaPhone}` : ""}
+
+IMPORTANT: End the post with a clear, direct CTA based on the CTA type above. If it's "call", include the phone number. If it's "book_online", direct them to the booking link. If it's "dm", invite them to DM. If it's "visit_website", point them to the website. Make the CTA feel natural, not forced.`;
+  }
+
+  return context;
+}
+
+/**
+ * Generate a social media post using AI in the brand's voice.
+ * Now supports Shopify product data and Service Spotlight data as content sources.
  */
 export async function generatePost(
   brandName: string,
   contentType: ContentFormat,
   voiceSettings?: BrandVoice | null,
-  customTopic?: string
+  customTopic?: string,
+  sourceInfo?: ContentSourceInfo
 ): Promise<GeneratedContent> {
-  const formatPrompt = FORMAT_PROMPTS[contentType];
+  // If content type is auto/custom and we have source info, pick the best type
+  const finalContentType = sourceInfo
+    ? pickContentType(sourceInfo, contentType)
+    : contentType;
+
+  const formatPrompt = FORMAT_PROMPTS[finalContentType];
 
   let voiceInstructions = "";
   if (voiceSettings) {
@@ -70,9 +197,13 @@ ${voiceSettings.samplePosts.length > 0 ? `\nSample posts for voice reference:\n$
 `;
   }
 
+  // Build source-specific context
+  const sourceContext = sourceInfo ? buildSourceContext(finalContentType, sourceInfo) : "";
+
   const systemPrompt = `You are a social media content strategist for ${brandName}. You create engaging, professional posts that drive engagement and build authority. Your posts should sound authentically human — NOT like AI generated content. Be direct, conversational, and value-driven.
 
 ${voiceInstructions}
+${sourceContext}
 
 Important rules:
 - Keep posts under 2000 characters for optimal engagement
@@ -80,7 +211,8 @@ Important rules:
 - Include relevant hashtags (3-5 max)
 - Include emojis sparingly and strategically
 - End with a clear, low-friction call-to-action
-- The post must be ready to publish as-is`;
+- The post must be ready to publish as-is
+- Every post should end with a direct CTA: call, book online, DM, or visit website`;
 
   const userPrompt = customTopic
     ? `${formatPrompt}\n\nSpecific topic to cover: ${customTopic}`
@@ -124,7 +256,7 @@ Important rules:
 
   return {
     content: parsed.postContent,
-    contentType,
+    contentType: finalContentType,
     suggestedImagePrompt: parsed.imagePrompt,
   };
 }

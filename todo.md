@@ -60,3 +60,36 @@
 ## Phase 8: Delivery
 - [x] README with deployment instructions
 - [x] Final checkpoint and delivery
+
+## Shopify Integration
+- [x] Database: shopify_connections table (store URL, access token, brand link)
+- [x] Database: shopify_products table (product data, images, collections)
+- [x] Shopify service: pull products, collections, images from connected store
+- [x] tRPC router: connect/disconnect Shopify, sync products, list products
+- [x] Admin UI: "Connect Shopify" button in brand settings / Social Accounts page
+- [x] AI engine: use Shopify product data as content source for product-focused posts
+- [x] Content rotation: Shopify products mixed into rotation with other content types
+
+## Service Spotlight
+- [x] Database: services table (name, description, service areas, specials, CTA, images)
+- [x] tRPC router: CRUD for services per brand
+- [x] Admin UI: Service Spotlight section in brand profile (dedicated page)
+- [x] Client UI: Service Spotlight section (Premium tier can edit via tRPC access control)
+- [x] AI engine: use Service Spotlight data for service-focused posts (seasonal reminders, before/after, booking CTAs)
+- [x] Every AI post can end with direct CTA (call, book, DM, visit website)
+
+## Content Source Logic
+- [x] AI engine checks: has Shopify? has Service Spotlight? has both?
+- [x] Content rotation mixes product posts, service posts, and general brand voice content
+- [x] General brand voice content always generated regardless of data sources
+
+## Testing & Polish (Shopify + Service Spotlight)
+- [x] Vitest tests for Shopify routers (getConnection, connect, disconnect, listProducts)
+- [x] Vitest tests for Service Spotlight routers (list, create, update, delete)
+- [x] Vitest tests for AI content sources integration
+- [x] All 51 tests passing
+- [x] AI Engine page: content source indicators (Shopify/Services badges)
+- [x] AI Engine page: useContentSources toggle
+- [x] Client Service Spotlight page with tier-based access (Premium: edit, Managed: view-only)
+- [x] Service Spotlight nav items in sidebar (admin + client)
+- [x] Integrations page renamed (Social Accounts → Integrations) with Shopify section

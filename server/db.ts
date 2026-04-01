@@ -7,6 +7,9 @@ import {
   socialAccounts, InsertSocialAccount,
   notifications, InsertNotification,
   analyticsSnapshots, InsertAnalyticsSnapshot,
+  shopifyConnections, InsertShopifyConnection,
+  shopifyProducts, InsertShopifyProduct,
+  services, InsertService,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -304,4 +307,147 @@ export async function getAnalyticsSummary(brandId: number) {
     clicks: sql<number>`COALESCE(SUM(clicks), 0)`,
   }).from(analyticsSnapshots).where(eq(analyticsSnapshots.brandId, brandId));
   return result ?? { impressions: 0, reach: 0, engagement: 0, likes: 0, comments: 0, shares: 0, clicks: 0 };
+}
+
+
+// ── Shopify Connections ────────────────────────────────────────────────────
+
+export async function createShopifyConnection(conn: InsertShopifyConnection) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(shopifyConnections).values(conn);
+  return { id: result[0].insertId };
+}
+
+export async function getShopifyConnectionByBrandId(brandId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(shopifyConnections).where(eq(shopifyConnections.brandId, brandId)).limit(1);
+  return result[0];
+}
+
+export async function updateShopifyConnection(id: number, data: Partial<InsertShopifyConnection>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(shopifyConnections).set(data).where(eq(shopifyConnections.id, id));
+}
+
+export async function deleteShopifyConnection(brandId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(shopifyConnections).where(eq(shopifyConnections.brandId, brandId));
+  // Also delete synced products
+  await db.delete(shopifyProducts).where(eq(shopifyProducts.brandId, brandId));
+}
+
+// ── Shopify Products ───────────────────────────────────────────────────────
+
+export async function upsertShopifyProduct(product: InsertShopifyProduct) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Check if product already exists
+  const existing = await db.select().from(shopifyProducts)
+    .where(and(
+      eq(shopifyProducts.brandId, product.brandId),
+      eq(shopifyProducts.shopifyProductId, product.shopifyProductId)
+    )).limit(1);
+
+  if (existing.length > 0) {
+    await db.update(shopifyProducts).set(product).where(eq(shopifyProducts.id, existing[0].id));
+    return { id: existing[0].id };
+  } else {
+    const result = await db.insert(shopifyProducts).values(product);
+    return { id: result[0].insertId };
+  }
+}
+
+export async function getShopifyProductsByBrandId(brandId: number, limit = 100) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(shopifyProducts)
+    .where(eq(shopifyProducts.brandId, brandId))
+    .orderBy(desc(shopifyProducts.updatedAt))
+    .limit(limit);
+}
+
+export async function getShopifyProductForContent(brandId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  // Get the product least recently used in content, or never used
+  const result = await db.select().from(shopifyProducts)
+    .where(and(
+      eq(shopifyProducts.brandId, brandId),
+      eq(shopifyProducts.status, "active")
+    ))
+    .orderBy(asc(shopifyProducts.lastUsedInPostAt))
+    .limit(1);
+  return result[0];
+}
+
+export async function markShopifyProductUsed(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(shopifyProducts).set({ lastUsedInPostAt: new Date() }).where(eq(shopifyProducts.id, id));
+}
+
+export async function deleteShopifyProductsByBrandId(brandId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(shopifyProducts).where(eq(shopifyProducts.brandId, brandId));
+}
+
+// ── Services (Service Spotlight) ──────────────────────────────────────────
+
+export async function createService(service: InsertService) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(services).values(service);
+  return { id: result[0].insertId };
+}
+
+export async function updateService(id: number, data: Partial<InsertService>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(services).set(data).where(eq(services.id, id));
+}
+
+export async function deleteService(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(services).where(eq(services.id, id));
+}
+
+export async function getServiceById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(services).where(eq(services.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getServicesByBrandId(brandId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(services)
+    .where(eq(services.brandId, brandId))
+    .orderBy(asc(services.displayOrder));
+}
+
+export async function getServiceForContent(brandId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  // Get the service least recently used in content, or never used
+  const result = await db.select().from(services)
+    .where(and(
+      eq(services.brandId, brandId),
+      eq(services.isActive, true)
+    ))
+    .orderBy(asc(services.lastUsedInPostAt))
+    .limit(1);
+  return result[0];
+}
+
+export async function markServiceUsed(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(services).set({ lastUsedInPostAt: new Date() }).where(eq(services.id, id));
 }

@@ -38,6 +38,7 @@ import {
   Globe,
   Users,
   Radio,
+  Wrench,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -56,7 +57,8 @@ const adminMenuItems = [
   { icon: Zap, label: "AI Engine", path: "/admin/ai" },
   { icon: BarChart3, label: "Analytics", path: "/admin/analytics" },
   { icon: Bell, label: "Notifications", path: "/admin/notifications" },
-  { icon: Globe, label: "Social Accounts", path: "/admin/social" },
+  { icon: Globe, label: "Integrations", path: "/admin/social" },
+  { icon: Wrench, label: "Service Spotlight", path: "/admin/services" },
   { icon: Users, label: "Users", path: "/admin/users" },
 ];
 
@@ -64,6 +66,7 @@ const clientMenuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/client" },
   { icon: Calendar, label: "Calendar", path: "/client/calendar" },
   { icon: FileText, label: "Posts", path: "/client/posts" },
+  { icon: Wrench, label: "Service Spotlight", path: "/client/services" },
   { icon: Bell, label: "Notifications", path: "/client/notifications" },
 ];
 

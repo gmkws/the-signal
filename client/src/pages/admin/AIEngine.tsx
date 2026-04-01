@@ -1,11 +1,13 @@
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Zap, Sparkles, Image as ImageIcon, Copy, Save, Loader2 } from "lucide-react";
+import { Zap, Sparkles, Image as ImageIcon, Copy, Save, Loader2, ShoppingBag, Wrench, Info } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { CONTENT_TYPE_LABELS } from "@shared/types";
@@ -17,14 +19,32 @@ export default function AdminAI() {
   const [selectedBrand, setSelectedBrand] = useState<string>("");
   const [contentType, setContentType] = useState<string>("hey_tony");
   const [customTopic, setCustomTopic] = useState("");
+  const [useContentSources, setUseContentSources] = useState(true);
   const [generatedContent, setGeneratedContent] = useState("");
+  const [generatedContentType, setGeneratedContentType] = useState("");
   const [imagePrompt, setImagePrompt] = useState("");
   const [generatedImageUrl, setGeneratedImageUrl] = useState("");
+
+  const brandId = selectedBrand ? parseInt(selectedBrand) : undefined;
+
+  // Check content sources for selected brand
+  const { data: shopifyConn } = trpc.shopify.getConnection.useQuery(
+    { brandId: brandId! },
+    { enabled: !!brandId }
+  );
+  const { data: services } = trpc.service.list.useQuery(
+    { brandId: brandId! },
+    { enabled: !!brandId }
+  );
+
+  const hasShopify = !!shopifyConn;
+  const hasServices = (services?.length || 0) > 0;
 
   const generatePost = trpc.ai.generatePost.useMutation({
     onSuccess: (data) => {
       setGeneratedContent(data.content);
       setImagePrompt(data.suggestedImagePrompt);
+      setGeneratedContentType(data.contentType);
       toast.success("Content generated!");
     },
     onError: (e) => toast.error(`Generation failed: ${e.message}`),
@@ -52,6 +72,7 @@ export default function AdminAI() {
       brandId: parseInt(selectedBrand),
       contentType: contentType as any,
       customTopic: customTopic || undefined,
+      useContentSources,
     });
   };
 
@@ -66,7 +87,7 @@ export default function AdminAI() {
       brandId: parseInt(selectedBrand),
       content: generatedContent,
       imageUrl: generatedImageUrl || undefined,
-      contentType: contentType as any,
+      contentType: (generatedContentType || contentType) as any,
       status: "draft",
       aiGenerated: true,
       platforms: ["facebook", "instagram"],
@@ -76,6 +97,21 @@ export default function AdminAI() {
   const copyToClipboard = () => {
     navigator.clipboard.writeText(generatedContent);
     toast.success("Copied to clipboard");
+  };
+
+  const contentTypeDescription = (ct: string) => {
+    switch (ct) {
+      case "hey_tony": return "Value-first tips — SEO fixes, AI tips, website mistakes";
+      case "hook_solve": return "Problem → Solution format with visual hooks";
+      case "auditor_showcase": return "Before/after site audit showcases";
+      case "local_tips": return "Hillsboro/Washington County business tips";
+      case "machine_series": return "\"Your website is a machine\" educational series";
+      case "print_digital": return "Print + digital full-stack capability highlights";
+      case "shopify_product": return "Product spotlight from connected Shopify store";
+      case "service_spotlight": return "Service highlight with seasonal reminders and CTAs";
+      case "custom": return "Custom post with your own topic";
+      default: return "";
+    }
   };
 
   return (
@@ -97,7 +133,7 @@ export default function AdminAI() {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label>Brand *</Label>
-              <Select value={selectedBrand} onValueChange={setSelectedBrand}>
+              <Select value={selectedBrand} onValueChange={(v) => { setSelectedBrand(v); setGeneratedContent(""); setGeneratedImageUrl(""); }}>
                 <SelectTrigger><SelectValue placeholder="Select a brand" /></SelectTrigger>
                 <SelectContent>
                   {brands?.map((b) => <SelectItem key={b.id} value={b.id.toString()}>{b.name}</SelectItem>)}
@@ -105,24 +141,58 @@ export default function AdminAI() {
               </Select>
             </div>
 
+            {/* Content Source Indicators */}
+            {selectedBrand && (
+              <div className="p-3 rounded-lg bg-secondary/50 space-y-2">
+                <p className="text-xs font-medium flex items-center gap-1">
+                  <Info className="h-3 w-3" /> Content Sources Detected
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {hasShopify && (
+                    <Badge variant="outline" className="text-xs gap-1 border-green-500/30 text-green-400">
+                      <ShoppingBag className="h-3 w-3" /> Shopify Connected
+                    </Badge>
+                  )}
+                  {hasServices && (
+                    <Badge variant="outline" className="text-xs gap-1 border-orange-500/30 text-orange-400">
+                      <Wrench className="h-3 w-3" /> {services?.length} Service{(services?.length || 0) > 1 ? "s" : ""}
+                    </Badge>
+                  )}
+                  {!hasShopify && !hasServices && (
+                    <span className="text-xs text-muted-foreground">No Shopify or services — general brand voice only</span>
+                  )}
+                </div>
+                {(hasShopify || hasServices) && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <Switch
+                      checked={useContentSources}
+                      onCheckedChange={setUseContentSources}
+                      id="use-sources"
+                    />
+                    <Label htmlFor="use-sources" className="text-xs cursor-pointer">
+                      Include product/service data in rotation
+                    </Label>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label>Content Format</Label>
               <Select value={contentType} onValueChange={setContentType}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {Object.entries(CONTENT_TYPE_LABELS).map(([k, v]) => (
-                    <SelectItem key={k} value={k}>{v}</SelectItem>
-                  ))}
+                  {Object.entries(CONTENT_TYPE_LABELS).map(([k, v]) => {
+                    // Only show shopify_product if brand has Shopify
+                    if (k === "shopify_product" && !hasShopify) return null;
+                    // Only show service_spotlight if brand has services
+                    if (k === "service_spotlight" && !hasServices) return null;
+                    return <SelectItem key={k} value={k}>{v}</SelectItem>;
+                  })}
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                {contentType === "hey_tony" && "Value-first tips — SEO fixes, AI tips, website mistakes"}
-                {contentType === "hook_solve" && "Problem → Solution format with visual hooks"}
-                {contentType === "auditor_showcase" && "Before/after site audit showcases"}
-                {contentType === "local_tips" && "Hillsboro/Washington County business tips"}
-                {contentType === "machine_series" && "\"Your website is a machine\" educational series"}
-                {contentType === "print_digital" && "Print + digital full-stack capability highlights"}
-                {contentType === "custom" && "Custom post with your own topic"}
+                {contentTypeDescription(contentType)}
               </p>
             </div>
 
@@ -153,7 +223,14 @@ export default function AdminAI() {
         {/* Output Panel */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Generated Content</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Generated Content</CardTitle>
+              {generatedContentType && (
+                <Badge variant="outline" className="text-xs">
+                  {CONTENT_TYPE_LABELS[generatedContentType as keyof typeof CONTENT_TYPE_LABELS] || generatedContentType}
+                </Badge>
+              )}
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             {generatedContent ? (
@@ -213,6 +290,11 @@ export default function AdminAI() {
                 <Sparkles className="h-12 w-12 mx-auto mb-4 opacity-30" />
                 <p className="text-sm">Generated content will appear here</p>
                 <p className="text-xs mt-1">Select a brand and format, then click Generate</p>
+                {(hasShopify || hasServices) && (
+                  <p className="text-xs mt-2 text-primary">
+                    Content sources detected — product/service data will be mixed into rotation
+                  </p>
+                )}
               </div>
             )}
           </CardContent>
