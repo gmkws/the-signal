@@ -29,6 +29,7 @@ import {
   LogOut,
   PanelLeft,
   Calendar,
+  CalendarDays,
   FileText,
   Bell,
   BarChart3,
@@ -39,6 +40,7 @@ import {
   Users,
   Radio,
   Wrench,
+  ShieldAlert,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -53,18 +55,21 @@ const adminMenuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/admin" },
   { icon: Building2, label: "Brands", path: "/admin/brands" },
   { icon: Calendar, label: "Calendar", path: "/admin/calendar" },
+  { icon: CalendarDays, label: "Events", path: "/admin/events" },
   { icon: FileText, label: "Posts", path: "/admin/posts" },
   { icon: Zap, label: "AI Engine", path: "/admin/ai" },
   { icon: BarChart3, label: "Analytics", path: "/admin/analytics" },
   { icon: Bell, label: "Notifications", path: "/admin/notifications" },
   { icon: Globe, label: "Integrations", path: "/admin/social" },
   { icon: Wrench, label: "Service Spotlight", path: "/admin/services" },
+  { icon: ShieldAlert, label: "System Health", path: "/admin/system-health" },
   { icon: Users, label: "Users", path: "/admin/users" },
 ];
 
 const clientMenuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/client" },
   { icon: Calendar, label: "Calendar", path: "/client/calendar" },
+  { icon: CalendarDays, label: "Events", path: "/client/events" },
   { icon: FileText, label: "Posts", path: "/client/posts" },
   { icon: Wrench, label: "Service Spotlight", path: "/client/services" },
   { icon: Bell, label: "Notifications", path: "/client/notifications" },

@@ -1,10 +1,10 @@
-import { trpc } from "@/lib/trpc";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
 import { useState, useMemo } from "react";
 import { POST_STATUS_LABELS } from "@shared/types";
+import { trpc } from "@/lib/trpc";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -23,6 +23,21 @@ export default function ClientCalendar() {
     { brandId: brand?.id, limit: 200 },
     { enabled: !!brand }
   );
+
+  const { data: upcomingEvents } = trpc.event.upcoming.useQuery(
+    { brandId: brand?.id, days: 60 },
+    { enabled: !!brand }
+  );
+
+  const getEventsForDate = (date: Date) => {
+    if (!upcomingEvents) return [];
+    return upcomingEvents.filter((e: any) => {
+      const ed = new Date(e.eventDate);
+      return ed.getFullYear() === date.getFullYear() &&
+        ed.getMonth() === date.getMonth() &&
+        ed.getDate() === date.getDate();
+    });
+  };
 
   const calendarDays = useMemo(() => {
     const days: { date: Date; isCurrentMonth: boolean }[] = [];
@@ -88,10 +103,16 @@ export default function ClientCalendar() {
           <div className="grid grid-cols-7">
             {calendarDays.map((day, idx) => {
               const dayPosts = getPostsForDate(day.date);
+              const dayEvents = getEventsForDate(day.date);
               return (
                 <div key={idx} className={`min-h-[90px] p-2 border-b border-r border-border ${!day.isCurrentMonth ? "opacity-30" : ""} ${isToday(day.date) ? "bg-primary/5" : ""}`}>
                   <div className={`text-xs font-medium mb-1 ${isToday(day.date) ? "text-primary" : "text-muted-foreground"}`}>{day.date.getDate()}</div>
                   <div className="space-y-1">
+                    {dayEvents.map((ev: any) => (
+                      <div key={`ev-${ev.id}`} className="text-[10px] px-1.5 py-0.5 rounded border truncate bg-violet-500/20 text-violet-400 border-violet-500/30 flex items-center gap-0.5" title={ev.name}>
+                        <CalendarDays className="h-2.5 w-2.5 flex-shrink-0" />{ev.name.substring(0, 10)}
+                      </div>
+                    ))}
                     {dayPosts.slice(0, 2).map((post) => (
                       <div key={post.id} className={`text-[10px] px-1.5 py-0.5 rounded border truncate ${statusColor(post.status)}`}>
                         {POST_STATUS_LABELS[post.status as keyof typeof POST_STATUS_LABELS]}

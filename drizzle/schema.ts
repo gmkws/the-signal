@@ -82,6 +82,12 @@ export const posts = mysqlTable("posts", {
     "local_tips",
     "machine_series",
     "print_digital",
+    "product_spotlight",
+    "service_highlight",
+    "event_teaser",
+    "event_reminder",
+    "event_day_of",
+    "event_recap",
     "custom"
   ]).default("custom").notNull(),
   // Scheduling
@@ -240,3 +246,82 @@ export const services = mysqlTable("services", {
 
 export type Service = typeof services.$inferSelect;
 export type InsertService = typeof services.$inferInsert;
+
+// ── Events ────────────────────────────────────────────────────────────────
+export const events = mysqlTable("events", {
+  id: int("id").autoincrement().primaryKey(),
+  brandId: int("brandId").notNull(),
+  // Event details
+  name: varchar("name", { length: 300 }).notNull(),
+  description: text("description"),
+  location: varchar("location", { length: 500 }),
+  ticketLink: varchar("ticketLink", { length: 500 }),
+  // Date/time for one-time events or the first occurrence
+  eventDate: timestamp("eventDate").notNull(),
+  eventEndDate: timestamp("eventEndDate"),
+  // Recurrence
+  isRecurring: boolean("isRecurring").default(false).notNull(),
+  recurrencePattern: mysqlEnum("recurrencePattern", ["weekly", "biweekly", "monthly"]),
+  recurrenceEndDate: timestamp("recurrenceEndDate"),
+  // Promotion settings
+  promoLeadDays: json("promoLeadDays").$type<number[]>(), // e.g. [3, 1, 0] for 3 days before, day before, day of
+  includeRecap: boolean("includeRecap").default(false).notNull(),
+  // Event image
+  imageUrl: text("imageUrl"),
+  // Status
+  isActive: boolean("isActive").default(true).notNull(),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Event = typeof events.$inferSelect;
+export type InsertEvent = typeof events.$inferInsert;
+
+// ── Event Promotions (links events to generated promo posts) ──────────────
+export const eventPromotions = mysqlTable("event_promotions", {
+  id: int("id").autoincrement().primaryKey(),
+  eventId: int("eventId").notNull(),
+  postId: int("postId"),
+  brandId: int("brandId").notNull(),
+  // Which type of promo this is
+  promoType: mysqlEnum("promoType", ["teaser", "reminder", "day_of", "recap"]).notNull(),
+  // The specific event occurrence date this promo is for
+  eventOccurrenceDate: timestamp("eventOccurrenceDate").notNull(),
+  // When this promo post should go out
+  scheduledDate: timestamp("scheduledDate").notNull(),
+  // Status
+  status: mysqlEnum("status", ["pending", "generated", "scheduled", "published", "skipped"]).default("pending").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type EventPromotion = typeof eventPromotions.$inferSelect;
+export type InsertEventPromotion = typeof eventPromotions.$inferInsert;
+
+// ── Error Logs ────────────────────────────────────────────────────────────
+export const errorLogs = mysqlTable("error_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  brandId: int("brandId"),
+  postId: int("postId"),
+  errorType: mysqlEnum("errorType", [
+    "post_failure",
+    "token_expired",
+    "content_generation_failure",
+    "api_error",
+    "retry_exhausted",
+    "system"
+  ]).notNull(),
+  severity: mysqlEnum("severity", ["info", "warning", "error", "critical"]).default("error").notNull(),
+  message: text("message").notNull(),
+  details: json("details").$type<Record<string, any>>(),
+  retryCount: int("retryCount").default(0),
+  maxRetries: int("maxRetries").default(3),
+  resolved: boolean("resolved").default(false).notNull(),
+  resolvedAt: timestamp("resolvedAt"),
+  resolvedBy: int("resolvedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ErrorLog = typeof errorLogs.$inferSelect;
+export type InsertErrorLog = typeof errorLogs.$inferInsert;

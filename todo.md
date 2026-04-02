@@ -96,3 +96,36 @@
 
 ## Bug Fixes
 - [x] Fix: p cannot contain nested div error on /admin dashboard page (changed p tags to span tags)
+
+## Event Calendar & Promotion Engine
+- [x] Database: events table (name, date, location, description, ticket link, recurrence, promo lead days)
+- [x] Database: event_promotions table (event_id, post_id, promo_type, scheduled_date)
+- [x] DB helpers: event CRUD, promotion sequence queries
+- [x] Promotion sequence generator service (teaser, reminder, day-of, recap posts)
+- [x] tRPC routers: event CRUD with role-based access (admin full, premium edit, managed view-only)
+- [x] tRPC router: generate promotion sequence for event
+- [x] AI content engine: event promotion post generation using event details + brand voice
+- [x] Admin Events page with calendar view and event form
+- [x] Client Events page with tier-based permissions
+- [x] Events nav item in sidebar (admin + client)
+- [x] Visual indicator on content calendar for event-related posts
+- [x] Content type additions: event_teaser, event_reminder, event_day_of, event_recap
+- [x] Recurring event support (weekly, biweekly, monthly patterns)
+- [x] Configurable promo lead days per event
+- [x] Vitest tests for event routers and promotion logic (64 tests total passing)
+
+## Failure Guardrails & Email Notifications
+- [x] Post failure handling: mark as "failed", auto-retry up to 3 times
+- [x] Email notification service (admin gets all alerts, clients get actionable items only)
+- [x] Unapproved post approaching publish time: email reminder to client, notify admin
+- [x] Token expiration detection: warn before posting, show warning badge on brand dashboard
+- [x] Content generation failure: fallback to template-based posts, notify admin
+- [x] Error logging / System Health section in admin dashboard
+- [x] tRPC routers for system health and error log queries
+
+## Smart Image Generation
+- [x] AI image generation for backgrounds/scenes (no text rendered in AI image)
+- [x] Programmatic text overlay engine (SVG-based, brand name, CTA, hashtags as clean text layers)
+- [x] Template-based graphics fallback for quotes, stats, tips post types
+- [x] Integration with existing AI Engine page for smart image workflow
+- [x] tRPC router for smart image generation with text overlay

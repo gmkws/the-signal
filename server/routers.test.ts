@@ -53,6 +53,27 @@ vi.mock("./db", () => ({
   updateService: vi.fn().mockResolvedValue(undefined),
   deleteService: vi.fn().mockResolvedValue(undefined),
   markServiceUsed: vi.fn().mockResolvedValue(undefined),
+  // Events
+  getEventsByBrandId: vi.fn().mockResolvedValue([]),
+  getUpcomingEvents: vi.fn().mockResolvedValue([]),
+  getEventById: vi.fn().mockResolvedValue(null),
+  createEvent: vi.fn().mockResolvedValue({ id: 1 }),
+  updateEvent: vi.fn().mockResolvedValue(undefined),
+  deleteEvent: vi.fn().mockResolvedValue(undefined),
+  getEventPromotions: vi.fn().mockResolvedValue([]),
+  createEventPromotion: vi.fn().mockResolvedValue({ id: 1 }),
+  // Error logs
+  createErrorLog: vi.fn().mockResolvedValue({ id: 1 }),
+  getErrorLogs: vi.fn().mockResolvedValue([]),
+  getErrorLogsByPost: vi.fn().mockResolvedValue([]),
+  getErrorStats: vi.fn().mockResolvedValue({ total: 0, errors: 0, warnings: 0, unresolved: 0, last24h: 0 }),
+  getErrorLogStats: vi.fn().mockResolvedValue({ total: 0, errors: 0, warnings: 0, unresolved: 0, last24h: 0 }),
+  getErrorLogsByBrand: vi.fn().mockResolvedValue([]),
+  resolveErrorLog: vi.fn().mockResolvedValue(undefined),
+  // Social accounts (additional)
+  getSocialAccountById: vi.fn().mockResolvedValue(null),
+  // Posts (additional)
+  getPostsNeedingApproval: vi.fn().mockResolvedValue([]),
 }));
 
 // ── Mock services ─────────────────────────────────────────────────────────
@@ -64,6 +85,18 @@ vi.mock("./services/contentEngine", () => ({
   }),
   generatePostImage: vi.fn().mockResolvedValue("https://example.com/image.png"),
   pickContentType: vi.fn().mockReturnValue("hey_tony"),
+}));
+
+vi.mock("./services/eventPromotion", () => ({
+  generateEventPromoSequence: vi.fn().mockResolvedValue([
+    { type: "teaser", content: "Teaser post", scheduledAt: new Date() },
+    { type: "reminder", content: "Reminder post", scheduledAt: new Date() },
+  ]),
+}));
+
+vi.mock("./services/imageOverlay", () => ({
+  generateSmartImage: vi.fn().mockResolvedValue({ url: "https://cdn.example.com/smart-image.svg", width: 1080, height: 1080 }),
+  generateTemplateGraphic: vi.fn().mockResolvedValue({ url: "https://cdn.example.com/template.svg", width: 1080, height: 1080 }),
 }));
 
 vi.mock("./services/shopify", () => ({
@@ -716,5 +749,171 @@ describe("ai.generatePost with content sources", () => {
     expect(result).toHaveProperty("content");
     expect(db.getShopifyConnectionByBrandId).not.toHaveBeenCalled();
     expect(db.getServicesByBrandId).not.toHaveBeenCalled();
+  });
+});
+
+// ── Event Tests ───────────────────────────────────────────────────────────
+
+describe("event.create", () => {
+  it("allows admin to create an event", async () => {
+    // Admin skips the brand permission check, so no getBrandById mock needed
+    const caller = appRouter.createCaller(createAdminContext());
+    const result = await caller.event.create({
+      brandId: 1,
+      name: "Saturday Night Live at The Venue",
+      eventDate: "2026-06-07T20:00:00Z",
+      promoLeadDays: [3, 1, 0],
+      recurrencePattern: "weekly",
+      isRecurring: true,
+    });
+    expect(result).toHaveProperty("id");
+    expect(db.createEvent).toHaveBeenCalled();
+  });
+
+  it("rejects event creation for non-existent brand (client gets FORBIDDEN)", async () => {
+    // Admin can create for any brand (brand check only happens for non-admins)
+    // For clients, a null brand means FORBIDDEN ("Only admin or premium clients can create events")
+    vi.mocked(db.getBrandById).mockResolvedValueOnce(null);
+
+    const caller = appRouter.createCaller(createClientContext("managed"));
+    await expect(caller.event.create({
+      brandId: 999,
+      name: "Test Event",
+      eventDate: "2026-06-07T20:00:00Z",
+    })).rejects.toThrow("Only admin or premium clients can create events");
+  });
+
+  it("rejects managed client event creation", async () => {
+    vi.mocked(db.getBrandById).mockResolvedValueOnce({
+      id: 1, clientUserId: 2, clientTier: "managed",
+    } as any);
+
+    const caller = appRouter.createCaller(createClientContext("managed"));
+    await expect(caller.event.create({
+      brandId: 1,
+      name: "Test Event",
+      eventDate: "2026-06-07T20:00:00Z",
+    })).rejects.toThrow("Only admin or premium clients can create events");
+  });
+
+  it("allows premium client to create an event", async () => {
+    // Premium client with matching clientUserId=2 can create events
+    // createClientContext returns user.id=2, so clientUserId must also be 2
+    // The router checks: brand.clientUserId !== ctx.user.id || brand.clientTier !== "premium"
+    vi.mocked(db.getBrandById).mockResolvedValueOnce({
+      id: 1, name: "Client Brand", clientUserId: 2, clientTier: "premium",
+    } as any);
+    vi.mocked(db.createEvent).mockResolvedValueOnce({ id: 5 } as any);
+
+    const caller = appRouter.createCaller(createClientContext("premium"));
+    // user.id=2 matches clientUserId=2 and tier is premium → should succeed
+    const result = await caller.event.create({
+      brandId: 1,
+      name: "Premium Client Event",
+      eventDate: "2026-07-01T18:00:00Z",
+      isRecurring: false,
+    });
+    // The router returns the result from db.createEvent
+    expect(result).toBeDefined();
+    expect(result).toHaveProperty("id");
+  });
+});
+
+describe("event.upcoming", () => {
+  it("returns upcoming events", async () => {
+    const mockEvents = [
+      { id: 1, name: "Test Event", eventDate: new Date("2026-06-07"), brandId: 1 },
+    ];
+    vi.mocked(db.getUpcomingEvents).mockResolvedValueOnce(mockEvents as any);
+
+    const caller = appRouter.createCaller(createAdminContext());
+    const result = await caller.event.upcoming({ days: 30 });
+    expect(result).toEqual(mockEvents);
+    expect(db.getUpcomingEvents).toHaveBeenCalledWith(undefined, 30);
+  });
+
+  it("filters by brandId when provided", async () => {
+    vi.mocked(db.getUpcomingEvents).mockResolvedValueOnce([]);
+
+    const caller = appRouter.createCaller(createAdminContext());
+    await caller.event.upcoming({ brandId: 1, days: 7 });
+    expect(db.getUpcomingEvents).toHaveBeenCalledWith(1, 7);
+  });
+});
+
+describe("event.delete", () => {
+  it("allows admin to delete an event", async () => {
+    vi.mocked(db.getEventById).mockResolvedValueOnce({
+      id: 1, brandId: 1, name: "Test Event",
+    } as any);
+
+    const caller = appRouter.createCaller(createAdminContext());
+    const result = await caller.event.delete({ id: 1 });
+    expect(result).toEqual({ success: true });
+    expect(db.deleteEvent).toHaveBeenCalledWith(1);
+  });
+
+  it("rejects deletion of non-existent event", async () => {
+    vi.mocked(db.getEventById).mockResolvedValueOnce(null);
+
+    const caller = appRouter.createCaller(createAdminContext());
+    await expect(caller.event.delete({ id: 999 })).rejects.toThrow("NOT_FOUND");
+  });
+
+  it("rejects non-owner client event deletion", async () => {
+    vi.mocked(db.getEventById).mockResolvedValueOnce({
+      id: 1, brandId: 1, name: "Test Event",
+    } as any);
+    // Default getBrandById mock returns null, which triggers FORBIDDEN
+    // (null brand means: !brand is true → throw FORBIDDEN)
+    // No need to override - the default mock returns null
+
+    const caller = appRouter.createCaller(createClientContext("premium"));
+    // getBrandById returns null (default mock) → FORBIDDEN
+    await expect(caller.event.delete({ id: 1 })).rejects.toThrow("FORBIDDEN");
+  });
+});
+
+// ── System Health / Guardrails Tests ─────────────────────────────────────
+
+describe("health.errorLogs", () => {
+  it("returns error logs for admin", async () => {
+    const mockLogs = [
+      { id: 1, type: "post_failure", severity: "error", message: "Failed to post", createdAt: new Date() },
+    ];
+    vi.mocked(db.getErrorLogs).mockResolvedValueOnce(mockLogs as any);
+
+    const caller = appRouter.createCaller(createAdminContext());
+    const result = await caller.health.errorLogs({ limit: 10 });
+    expect(result).toEqual(mockLogs);
+    expect(db.getErrorLogs).toHaveBeenCalledWith(10, false);
+  });
+
+  it("rejects non-admin access to error logs", async () => {
+    const caller = appRouter.createCaller(createClientContext());
+    await expect(caller.health.errorLogs({ limit: 10 })).rejects.toThrow(NOT_ADMIN_ERR_MSG);
+  });
+});
+
+describe("health.errorStats", () => {
+  it("returns error statistics for admin", async () => {
+    const mockStats = { total: 5, errors: 2, warnings: 3, unresolved: 4, last24h: 1 };
+    vi.mocked(db.getErrorLogStats).mockResolvedValueOnce(mockStats as any);
+
+    const caller = appRouter.createCaller(createAdminContext());
+    const result = await caller.health.errorStats();
+    expect(result).toEqual(mockStats);
+  });
+});
+
+describe("health.checkUnapproved", () => {
+  it("checks for unapproved posts approaching publish time", async () => {
+    vi.mocked(db.getPostsNeedingApproval).mockResolvedValueOnce([]);
+
+    const caller = appRouter.createCaller(createAdminContext());
+    const result = await caller.health.checkUnapproved({ hoursBeforePublish: 24 });
+    // The router returns { reminded } from checkUnapprovedPosts service
+    expect(result).toHaveProperty("reminded");
+    expect(typeof result.reminded).toBe("number");
   });
 });

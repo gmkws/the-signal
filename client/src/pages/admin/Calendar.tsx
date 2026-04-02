@@ -1,11 +1,11 @@
-import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
 import { useState, useMemo } from "react";
 import { POST_STATUS_LABELS, CONTENT_TYPE_LABELS } from "@shared/types";
+import { trpc } from "@/lib/trpc";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -15,6 +15,7 @@ export default function AdminCalendar() {
   const [selectedBrandId, setSelectedBrandId] = useState<string>("all");
 
   const { data: brands } = trpc.brand.list.useQuery();
+  const { data: upcomingEvents } = trpc.event.upcoming.useQuery({ days: 60 });
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -48,6 +49,16 @@ export default function AdminCalendar() {
     }
     return days;
   }, [year, month]);
+
+  const getEventsForDate = (date: Date) => {
+    if (!upcomingEvents) return [];
+    return upcomingEvents.filter((e: any) => {
+      const ed = new Date(e.eventDate);
+      return ed.getFullYear() === date.getFullYear() &&
+        ed.getMonth() === date.getMonth() &&
+        ed.getDate() === date.getDate();
+    });
+  };
 
   const getPostsForDate = (date: Date) => {
     if (!posts) return [];
@@ -148,6 +159,18 @@ export default function AdminCalendar() {
                     {day.date.getDate()}
                   </div>
                   <div className="space-y-1">
+                    {/* Event indicators */}
+                    {getEventsForDate(day.date).map((ev: any) => (
+                      <div
+                        key={`ev-${ev.id}`}
+                        className="text-[10px] px-1.5 py-0.5 rounded border truncate bg-violet-500/20 text-violet-400 border-violet-500/30 flex items-center gap-0.5"
+                        title={`EVENT: ${ev.name}`}
+                      >
+                        <CalendarDays className="h-2.5 w-2.5 flex-shrink-0" />
+                        {ev.name.substring(0, 12)}
+                      </div>
+                    ))}
+                    {/* Post indicators */}
                     {dayPosts.slice(0, 3).map((post) => (
                       <div
                         key={post.id}
@@ -172,6 +195,10 @@ export default function AdminCalendar() {
 
       {/* Legend */}
       <div className="flex items-center gap-4 flex-wrap">
+        <div className="flex items-center gap-1.5">
+          <div className="h-2.5 w-2.5 rounded-full bg-violet-500/60" />
+          <span className="text-xs text-muted-foreground">Event</span>
+        </div>
         {["draft", "scheduled", "pending_review", "approved", "published", "failed", "paused"].map((status) => (
           <div key={status} className="flex items-center gap-1.5">
             <div className={`h-2.5 w-2.5 rounded-full ${statusColor(status).split(" ")[0]}`} />

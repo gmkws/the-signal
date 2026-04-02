@@ -7,10 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Zap, Sparkles, Image as ImageIcon, Copy, Save, Loader2, ShoppingBag, Wrench, Info } from "lucide-react";
+import { Zap, Sparkles, Image as ImageIcon, Copy, Save, Loader2, ShoppingBag, Wrench, Info, Layers, Type, CalendarDays } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { CONTENT_TYPE_LABELS } from "@shared/types";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function AdminAI() {
   const utils = trpc.useUtils();
@@ -24,6 +25,11 @@ export default function AdminAI() {
   const [generatedContentType, setGeneratedContentType] = useState("");
   const [imagePrompt, setImagePrompt] = useState("");
   const [generatedImageUrl, setGeneratedImageUrl] = useState("");
+  const [smartImageUrl, setSmartImageUrl] = useState("");
+  const [overlayHeadline, setOverlayHeadline] = useState("");
+  const [overlayCta, setOverlayCta] = useState("");
+  const [overlayHashtags, setOverlayHashtags] = useState("");
+  const [imageMode, setImageMode] = useState<"ai" | "smart">("smart");
 
   const brandId = selectedBrand ? parseInt(selectedBrand) : undefined;
 
@@ -58,6 +64,14 @@ export default function AdminAI() {
     onError: (e) => toast.error(`Image generation failed: ${e.message}`),
   });
 
+  const generateSmartImage = trpc.ai.generateSmartImage.useMutation({
+    onSuccess: (data) => {
+      setSmartImageUrl(data.imageUrl);
+      toast.success("Smart image generated with text overlay!");
+    },
+    onError: (e) => toast.error(`Smart image failed: ${e.message}`),
+  });
+
   const createPost = trpc.post.create.useMutation({
     onSuccess: () => {
       utils.post.list.invalidate();
@@ -79,6 +93,23 @@ export default function AdminAI() {
   const handleGenerateImage = () => {
     if (!imagePrompt) { toast.error("No image prompt available"); return; }
     generateImage.mutate({ prompt: imagePrompt });
+  };
+
+  const handleGenerateSmartImage = () => {
+    if (!imagePrompt) { toast.error("No image prompt available"); return; }
+    if (!selectedBrand) { toast.error("Select a brand first"); return; }
+    const brand = brands?.find(b => b.id === parseInt(selectedBrand));
+    generateSmartImage.mutate({
+      brandId: parseInt(selectedBrand),
+      prompt: imagePrompt,
+      overlayText: {
+        headline: overlayHeadline || generatedContent.split("\n")[0]?.substring(0, 60) || undefined,
+        ctaText: overlayCta || undefined,
+        brandName: brand?.name || "GMK Web Solutions",
+        hashtags: overlayHashtags ? overlayHashtags.split(" ").filter(Boolean) : undefined,
+      },
+      style: "dark",
+    });
   };
 
   const handleSaveAsDraft = () => {
@@ -259,30 +290,115 @@ export default function AdminAI() {
                   <Label className="flex items-center gap-2">
                     <ImageIcon className="h-4 w-4 text-primary" /> Image Generation
                   </Label>
-                  <Textarea
-                    value={imagePrompt}
-                    onChange={(e) => setImagePrompt(e.target.value)}
-                    rows={3}
-                    className="text-xs"
-                    placeholder="Image prompt..."
-                  />
-                  <Button
-                    onClick={handleGenerateImage}
-                    disabled={!imagePrompt || generateImage.isPending}
-                    variant="outline"
-                    className="w-full gap-2"
-                  >
-                    {generateImage.isPending ? (
-                      <><Loader2 className="h-4 w-4 animate-spin" /> Generating Image...</>
-                    ) : (
-                      <><ImageIcon className="h-4 w-4" /> Generate Image</>
-                    )}
-                  </Button>
-                  {generatedImageUrl && (
-                    <div className="rounded-lg overflow-hidden border border-border">
-                      <img src={generatedImageUrl} alt="Generated" className="w-full h-auto" />
-                    </div>
-                  )}
+                  <Tabs value={imageMode} onValueChange={(v) => setImageMode(v as any)}>
+                    <TabsList className="w-full">
+                      <TabsTrigger value="smart" className="flex-1 gap-1.5">
+                        <Layers className="h-3.5 w-3.5" /> Smart (AI + Text Overlay)
+                      </TabsTrigger>
+                      <TabsTrigger value="ai" className="flex-1 gap-1.5">
+                        <Sparkles className="h-3.5 w-3.5" /> AI Background Only
+                      </TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="smart" className="space-y-3 mt-3">
+                      <div className="p-2.5 rounded-md bg-primary/5 border border-primary/20">
+                        <p className="text-xs text-primary font-medium flex items-center gap-1">
+                          <Layers className="h-3 w-3" /> Zero spelling errors guaranteed
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          AI generates a clean background scene — text is added programmatically as a crisp overlay layer.
+                        </p>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Background Scene Prompt</Label>
+                        <Textarea
+                          value={imagePrompt}
+                          onChange={(e) => setImagePrompt(e.target.value)}
+                          rows={2}
+                          className="text-xs"
+                          placeholder="e.g., Professional office workspace, dark moody atmosphere..."
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs flex items-center gap-1"><Type className="h-3 w-3" /> Headline Text</Label>
+                          <Input
+                            value={overlayHeadline}
+                            onChange={(e) => setOverlayHeadline(e.target.value)}
+                            className="text-xs h-8"
+                            placeholder="Auto-filled from post"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">CTA Text</Label>
+                          <Input
+                            value={overlayCta}
+                            onChange={(e) => setOverlayCta(e.target.value)}
+                            className="text-xs h-8"
+                            placeholder="e.g., Call us today"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Hashtags (space-separated)</Label>
+                        <Input
+                          value={overlayHashtags}
+                          onChange={(e) => setOverlayHashtags(e.target.value)}
+                          className="text-xs h-8"
+                          placeholder="#Hillsboro #WebDesign #GMK"
+                        />
+                      </div>
+                      <Button
+                        onClick={handleGenerateSmartImage}
+                        disabled={!imagePrompt || generateSmartImage.isPending}
+                        className="w-full gap-2"
+                      >
+                        {generateSmartImage.isPending ? (
+                          <><Loader2 className="h-4 w-4 animate-spin" /> Generating Smart Image...</>
+                        ) : (
+                          <><Layers className="h-4 w-4" /> Generate Smart Image</>
+                        )}
+                      </Button>
+                      {smartImageUrl && (
+                        <div className="rounded-lg overflow-hidden border border-border">
+                          <img src={smartImageUrl} alt="Smart Generated" className="w-full h-auto" />
+                          <div className="p-2 bg-muted/30 flex items-center justify-between">
+                            <span className="text-xs text-muted-foreground">AI background + programmatic text overlay</span>
+                            <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => { setGeneratedImageUrl(smartImageUrl); toast.success("Set as post image"); }}>
+                              Use for Post
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </TabsContent>
+
+                    <TabsContent value="ai" className="space-y-3 mt-3">
+                      <Textarea
+                        value={imagePrompt}
+                        onChange={(e) => setImagePrompt(e.target.value)}
+                        rows={3}
+                        className="text-xs"
+                        placeholder="Image prompt..."
+                      />
+                      <Button
+                        onClick={handleGenerateImage}
+                        disabled={!imagePrompt || generateImage.isPending}
+                        variant="outline"
+                        className="w-full gap-2"
+                      >
+                        {generateImage.isPending ? (
+                          <><Loader2 className="h-4 w-4 animate-spin" /> Generating...</>
+                        ) : (
+                          <><ImageIcon className="h-4 w-4" /> Generate AI Image</>
+                        )}
+                      </Button>
+                      {generatedImageUrl && (
+                        <div className="rounded-lg overflow-hidden border border-border">
+                          <img src={generatedImageUrl} alt="Generated" className="w-full h-auto" />
+                        </div>
+                      )}
+                    </TabsContent>
+                  </Tabs>
                 </div>
               </>
             ) : (

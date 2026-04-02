@@ -19,6 +19,8 @@ import AdminNotifications from "./pages/admin/Notifications";
 import AdminSocial from "./pages/admin/SocialAccounts";
 import AdminUsers from "./pages/admin/Users";
 import AdminServiceSpotlight from "./pages/admin/ServiceSpotlight";
+import AdminEvents from "./pages/admin/Events";
+import AdminSystemHealth from "./pages/admin/SystemHealth";
 
 // Client Pages
 import ClientDashboard from "./pages/client/Dashboard";
@@ -26,6 +28,7 @@ import ClientCalendar from "./pages/client/Calendar";
 import ClientPosts from "./pages/client/Posts";
 import ClientNotifications from "./pages/client/Notifications";
 import ClientServiceSpotlight from "./pages/client/ServiceSpotlight";
+import ClientEvents from "./pages/client/Events";
 
 // Landing
 import Home from "./pages/Home";
@@ -111,6 +114,12 @@ function AuthRouter() {
         <Route path="/admin/services">
           <AdminGuard><AdminServiceSpotlight /></AdminGuard>
         </Route>
+        <Route path="/admin/events">
+          <AdminGuard><AdminEvents /></AdminGuard>
+        </Route>
+        <Route path="/admin/system-health">
+          <AdminGuard><AdminSystemHealth /></AdminGuard>
+        </Route>
 
         {/* Client routes — guarded */}
         <Route path="/client">
@@ -127,6 +136,9 @@ function AuthRouter() {
         </Route>
         <Route path="/client/services">
           <ClientGuard><ClientServiceSpotlight /></ClientGuard>
+        </Route>
+        <Route path="/client/events">
+          <ClientGuard><ClientEvents /></ClientGuard>
         </Route>
 
         {/* Root redirect based on role */}

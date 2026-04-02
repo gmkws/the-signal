@@ -15,6 +15,20 @@
       "when": 1775026978281,
       "tag": "0001_young_stardust",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1775140459807,
+      "tag": "0002_late_cargill",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1775164853355,
+      "tag": "0003_quick_gorilla_man",
+      "breakpoints": true
     }
   ]
 }

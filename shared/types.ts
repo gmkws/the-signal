@@ -15,8 +15,12 @@ export const CONTENT_TYPES = [
   "local_tips",
   "machine_series",
   "print_digital",
-  "shopify_product",
-  "service_spotlight",
+  "product_spotlight",
+  "service_highlight",
+  "event_teaser",
+  "event_reminder",
+  "event_day_of",
+  "event_recap",
   "custom",
 ] as const;
 
@@ -29,9 +33,54 @@ export const CONTENT_TYPE_LABELS: Record<ContentType, string> = {
   local_tips: "Local Business Tips",
   machine_series: "Your Website Is a Machine",
   print_digital: "Print + Digital",
-  shopify_product: "Shopify Product Spotlight",
-  service_spotlight: "Service Spotlight",
+  product_spotlight: "Shopify Product Spotlight",
+  service_highlight: "Service Spotlight",
+  event_teaser: "Event Teaser",
+  event_reminder: "Event Reminder",
+  event_day_of: "Event Day-Of",
+  event_recap: "Event Recap",
   custom: "Custom Post",
+};
+
+// ── Event Content Types (subset) ──────────────────────────────────────────
+
+export const EVENT_CONTENT_TYPES = [
+  "event_teaser",
+  "event_reminder",
+  "event_day_of",
+  "event_recap",
+] as const;
+
+export type EventContentType = (typeof EVENT_CONTENT_TYPES)[number];
+
+// ── Promo Types ───────────────────────────────────────────────────────────
+
+export const PROMO_TYPES = ["teaser", "reminder", "day_of", "recap"] as const;
+export type PromoType = (typeof PROMO_TYPES)[number];
+
+export const PROMO_TYPE_LABELS: Record<PromoType, string> = {
+  teaser: "Teaser / Announcement",
+  reminder: "Reminder / Hype",
+  day_of: "Day-Of Push",
+  recap: "Post-Event Recap",
+};
+
+export const PROMO_TYPE_TO_CONTENT_TYPE: Record<PromoType, EventContentType> = {
+  teaser: "event_teaser",
+  reminder: "event_reminder",
+  day_of: "event_day_of",
+  recap: "event_recap",
+};
+
+// ── Recurrence Patterns ───────────────────────────────────────────────────
+
+export const RECURRENCE_PATTERNS = ["weekly", "biweekly", "monthly"] as const;
+export type RecurrencePattern = (typeof RECURRENCE_PATTERNS)[number];
+
+export const RECURRENCE_PATTERN_LABELS: Record<RecurrencePattern, string> = {
+  weekly: "Every Week",
+  biweekly: "Every 2 Weeks",
+  monthly: "Every Month",
 };
 
 // ── Post Statuses ──────────────────────────────────────────────────────────

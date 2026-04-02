@@ -10,6 +10,9 @@ import {
   shopifyConnections, InsertShopifyConnection,
   shopifyProducts, InsertShopifyProduct,
   services, InsertService,
+  events, InsertEvent,
+  eventPromotions, InsertEventPromotion,
+  errorLogs, InsertErrorLog,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -450,4 +453,198 @@ export async function markServiceUsed(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(services).set({ lastUsedInPostAt: new Date() }).where(eq(services.id, id));
+}
+
+// ── Events ─────────────────────────────────────────────────────────────────
+
+
+export async function createEvent(event: InsertEvent) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(events).values(event);
+  return { id: result[0].insertId };
+}
+
+export async function updateEvent(id: number, data: Partial<InsertEvent>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(events).set(data).where(eq(events.id, id));
+}
+
+export async function deleteEvent(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Delete associated promotions first
+  await db.delete(eventPromotions).where(eq(eventPromotions.eventId, id));
+  await db.delete(events).where(eq(events.id, id));
+}
+
+export async function getEventById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(events).where(eq(events.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getEventsByBrandId(brandId: number, includeInactive = false) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: any[] = [eq(events.brandId, brandId)];
+  if (!includeInactive) conditions.push(eq(events.isActive, true));
+  return db.select().from(events)
+    .where(and(...conditions))
+    .orderBy(asc(events.eventDate));
+}
+
+export async function getUpcomingEvents(brandId?: number, days = 30) {
+  const db = await getDb();
+  if (!db) return [];
+  const now = new Date();
+  const future = new Date();
+  future.setDate(future.getDate() + days);
+  const conditions: any[] = [
+    eq(events.isActive, true),
+    gte(events.eventDate, now),
+    lte(events.eventDate, future),
+  ];
+  if (brandId) conditions.push(eq(events.brandId, brandId));
+  return db.select().from(events)
+    .where(and(...conditions))
+    .orderBy(asc(events.eventDate));
+}
+
+// ── Event Promotions ───────────────────────────────────────────────────────
+
+export async function createEventPromotion(promo: InsertEventPromotion) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(eventPromotions).values(promo);
+  return { id: result[0].insertId };
+}
+
+export async function updateEventPromotion(id: number, data: Partial<InsertEventPromotion>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(eventPromotions).set(data).where(eq(eventPromotions.id, id));
+}
+
+export async function getEventPromotionsByEventId(eventId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(eventPromotions)
+    .where(eq(eventPromotions.eventId, eventId))
+    .orderBy(asc(eventPromotions.scheduledDate));
+}
+
+export async function getEventPromotionsByBrandId(brandId: number, limit = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(eventPromotions)
+    .where(eq(eventPromotions.brandId, brandId))
+    .orderBy(asc(eventPromotions.scheduledDate))
+    .limit(limit);
+}
+
+export async function getPendingEventPromotions(brandId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: any[] = [eq(eventPromotions.status, "pending")];
+  if (brandId) conditions.push(eq(eventPromotions.brandId, brandId));
+  return db.select().from(eventPromotions)
+    .where(and(...conditions))
+    .orderBy(asc(eventPromotions.scheduledDate));
+}
+
+export async function deleteEventPromotionsByEventId(eventId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(eventPromotions).where(eq(eventPromotions.eventId, eventId));
+}
+
+export async function getEventPromoPostIds(brandId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const result = await db.select({ postId: eventPromotions.postId })
+    .from(eventPromotions)
+    .where(and(eq(eventPromotions.brandId, brandId)));
+  return result.map(r => r.postId).filter(Boolean) as number[];
+}
+
+// ── Error Logs ────────────────────────────────────────────────────────────
+
+export async function createErrorLog(log: Omit<InsertErrorLog, "id">) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(errorLogs).values(log);
+  return { id: result[0].insertId };
+}
+
+export async function getErrorLogs(limit = 100, includeResolved = false) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: any[] = [];
+  if (!includeResolved) conditions.push(eq(errorLogs.resolved, false));
+  return db.select().from(errorLogs)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(desc(errorLogs.createdAt))
+    .limit(limit);
+}
+
+export async function getErrorLogsByBrand(brandId: number, limit = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(errorLogs)
+    .where(eq(errorLogs.brandId, brandId))
+    .orderBy(desc(errorLogs.createdAt))
+    .limit(limit);
+}
+
+export async function getErrorLogsByPost(postId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(errorLogs)
+    .where(eq(errorLogs.postId, postId))
+    .orderBy(desc(errorLogs.createdAt));
+}
+
+export async function resolveErrorLog(id: number, resolvedBy: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(errorLogs).set({
+    resolved: true,
+    resolvedAt: new Date(),
+    resolvedBy,
+  }).where(eq(errorLogs.id, id));
+}
+
+export async function getErrorLogStats() {
+  const db = await getDb();
+  if (!db) return { total: 0, unresolved: 0, critical: 0, byType: {} };
+  const all = await db.select().from(errorLogs)
+    .where(eq(errorLogs.resolved, false));
+  const byType: Record<string, number> = {};
+  let critical = 0;
+  for (const log of all) {
+    byType[log.errorType] = (byType[log.errorType] || 0) + 1;
+    if (log.severity === "critical") critical++;
+  }
+  return { total: all.length, unresolved: all.length, critical, byType };
+}
+
+export async function getSocialAccountById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(socialAccounts).where(eq(socialAccounts.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getPostsNeedingApproval(beforeDate: Date) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(posts)
+    .where(and(
+      eq(posts.status, "pending_review"),
+      lte(posts.scheduledAt, beforeDate)
+    ))
+    .orderBy(asc(posts.scheduledAt));
 }

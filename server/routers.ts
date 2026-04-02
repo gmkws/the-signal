@@ -9,6 +9,9 @@ import { generatePost, generatePostImage, pickContentType } from "./services/con
 import type { ContentFormat, ContentSourceInfo } from "./services/contentEngine";
 import { MAX_BRANDS } from "@shared/types";
 import { validateShopifyConnection, fetchShopifyProducts, transformShopifyProduct, fetchShopifyCollections } from "./services/shopify";
+import { buildPromoSchedule, generatePromoPostContent, getEventOccurrences } from "./services/eventPromotion";
+import { handlePostFailure, checkBrandTokenHealth, checkUnapprovedPosts, handleContentGenerationFailure, generateFallbackPost } from "./services/guardrails";
+import { generateSmartImage as renderSmartImage, generateTemplateGraphic } from "./services/imageOverlay";
 
 // ── Brand Router ───────────────────────────────────────────────────────────
 
@@ -354,13 +357,31 @@ const aiRouter = router({
         }
       }
 
-      const result = await generatePost(
-        brand.name,
-        input.contentType as ContentFormat,
-        brand.voiceSettings as any,
-        input.customTopic,
-        sourceInfo
-      );
+      let result;
+      try {
+        result = await generatePost(
+          brand.name,
+          input.contentType as ContentFormat,
+          brand.voiceSettings as any,
+          input.customTopic,
+          sourceInfo
+        );
+      } catch (err: any) {
+        // Fallback to template-based post on AI failure
+        const fallback = await handleContentGenerationFailure(
+          input.brandId,
+          input.contentType,
+          err?.message || "Unknown error",
+          brand.name,
+          brand.location || ""
+        );
+        result = {
+          content: fallback.fallbackContent,
+          contentType: input.contentType,
+          suggestedImagePrompt: `Professional social media graphic for ${brand.name}`,
+          isFallback: true,
+        };
+      }
 
       // Mark the used content source as used for rotation tracking
       if (result.contentType === "shopify_product" && sourceInfo?.shopifyProduct) {
@@ -380,6 +401,48 @@ const aiRouter = router({
     .mutation(async ({ input }) => {
       const imageUrl = await generatePostImage(input.prompt);
       return { imageUrl };
+    }),
+
+  generateSmartImage: protectedProcedure
+    .input(z.object({
+      brandId: z.number(),
+      prompt: z.string().min(1),
+      overlayText: z.object({
+        headline: z.string().optional(),
+        subtext: z.string().optional(),
+        ctaText: z.string().optional(),
+        brandName: z.string().optional(),
+        hashtags: z.array(z.string()).optional(),
+      }).optional(),
+      style: z.enum(["modern", "bold", "minimal", "vibrant", "dark"]).default("modern"),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const brand = await db.getBrandById(input.brandId);
+      if (!brand) throw new TRPCError({ code: "NOT_FOUND", message: "Brand not found" });
+
+      // Generate AI background image (no text in prompt)
+      const bgPrompt = `${input.prompt}. Professional social media background image. No text, no words, no letters, no watermarks. Clean visual composition suitable for text overlay. High quality, vibrant colors.`;
+      let bgImageUrl: string;
+      try {
+        bgImageUrl = await generatePostImage(bgPrompt);
+      } catch (err: any) {
+        // Use a solid gradient fallback
+        bgImageUrl = "";
+      }
+
+      // Render composite image with text overlay
+      const result = await renderSmartImage({
+        backgroundUrl: bgImageUrl,
+        headline: input.overlayText?.headline || "",
+        subtext: input.overlayText?.subtext || "",
+        ctaText: input.overlayText?.ctaText || "",
+        brandName: input.overlayText?.brandName || brand.name,
+        hashtags: input.overlayText?.hashtags || [],
+        style: input.style,
+        brandLogoUrl: brand.logoUrl || "",
+      });
+
+      return result;
     }),
 });
 
@@ -735,6 +798,295 @@ const serviceRouter = router({
     }),
 });
 
+// ── Event Router ─────────────────────────────────────────────────────────
+
+const eventRouter = router({
+  list: protectedProcedure
+    .input(z.object({ brandId: z.number(), includeInactive: z.boolean().default(false) }))
+    .query(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin") {
+        const brands = await db.getBrandsByClientUserId(ctx.user.id);
+        if (!brands.some(b => b.id === input.brandId)) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+      }
+      return db.getEventsByBrandId(input.brandId, input.includeInactive);
+    }),
+
+  upcoming: protectedProcedure
+    .input(z.object({ brandId: z.number().optional(), days: z.number().default(30) }))
+    .query(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && input.brandId) {
+        const brands = await db.getBrandsByClientUserId(ctx.user.id);
+        if (!brands.some(b => b.id === input.brandId)) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+      }
+      return db.getUpcomingEvents(input.brandId, input.days);
+    }),
+
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const event = await db.getEventById(input.id);
+      if (!event) throw new TRPCError({ code: "NOT_FOUND" });
+      if (ctx.user.role !== "admin") {
+        const brands = await db.getBrandsByClientUserId(ctx.user.id);
+        if (!brands.some(b => b.id === event.brandId)) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+      }
+      return event;
+    }),
+
+  create: protectedProcedure
+    .input(z.object({
+      brandId: z.number(),
+      name: z.string().min(1).max(300),
+      description: z.string().optional(),
+      location: z.string().optional(),
+      ticketLink: z.string().optional(),
+      eventDate: z.string(), // ISO string from frontend
+      eventEndDate: z.string().optional(),
+      isRecurring: z.boolean().default(false),
+      recurrencePattern: z.enum(["weekly", "biweekly", "monthly"]).optional(),
+      recurrenceEndDate: z.string().optional(),
+      promoLeadDays: z.array(z.number().min(0).max(30)).default([0]),
+      includeRecap: z.boolean().default(false),
+      imageUrl: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Permission check
+      if (ctx.user.role !== "admin") {
+        const brand = await db.getBrandById(input.brandId);
+        if (!brand || brand.clientUserId !== ctx.user.id || brand.clientTier !== "premium") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Only admin or premium clients can create events" });
+        }
+      }
+      const result = await db.createEvent({
+        ...input,
+        eventDate: new Date(input.eventDate),
+        eventEndDate: input.eventEndDate ? new Date(input.eventEndDate) : null,
+        recurrenceEndDate: input.recurrenceEndDate ? new Date(input.recurrenceEndDate) : null,
+        createdBy: ctx.user.id,
+      } as any);
+      return result;
+    }),
+
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().min(1).max(300).optional(),
+      description: z.string().optional(),
+      location: z.string().optional(),
+      ticketLink: z.string().optional(),
+      eventDate: z.string().optional(),
+      eventEndDate: z.string().optional(),
+      isRecurring: z.boolean().optional(),
+      recurrencePattern: z.enum(["weekly", "biweekly", "monthly"]).optional(),
+      recurrenceEndDate: z.string().optional(),
+      promoLeadDays: z.array(z.number().min(0).max(30)).optional(),
+      includeRecap: z.boolean().optional(),
+      imageUrl: z.string().optional(),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const event = await db.getEventById(input.id);
+      if (!event) throw new TRPCError({ code: "NOT_FOUND" });
+      if (ctx.user.role !== "admin") {
+        const brand = await db.getBrandById(event.brandId);
+        if (!brand || brand.clientUserId !== ctx.user.id || brand.clientTier !== "premium") {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+      }
+      const { id, ...data } = input;
+      const updateData: any = { ...data };
+      if (data.eventDate) updateData.eventDate = new Date(data.eventDate);
+      if (data.eventEndDate) updateData.eventEndDate = new Date(data.eventEndDate);
+      if (data.recurrenceEndDate) updateData.recurrenceEndDate = new Date(data.recurrenceEndDate);
+      await db.updateEvent(id, updateData);
+      return { success: true };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const event = await db.getEventById(input.id);
+      if (!event) throw new TRPCError({ code: "NOT_FOUND" });
+      if (ctx.user.role !== "admin") {
+        const brand = await db.getBrandById(event.brandId);
+        if (!brand || brand.clientUserId !== ctx.user.id || brand.clientTier !== "premium") {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+      }
+      await db.deleteEvent(input.id);
+      return { success: true };
+    }),
+
+  generatePromoSequence: protectedProcedure
+    .input(z.object({ eventId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const event = await db.getEventById(input.eventId);
+      if (!event) throw new TRPCError({ code: "NOT_FOUND" });
+
+      // Permission check
+      if (ctx.user.role !== "admin") {
+        const brands = await db.getBrandsByClientUserId(ctx.user.id);
+        if (!brands.some(b => b.id === event.brandId)) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+      }
+
+      const brand = await db.getBrandById(event.brandId);
+      if (!brand) throw new TRPCError({ code: "NOT_FOUND", message: "Brand not found" });
+
+      // Build the promo schedule
+      const promoSlots = buildPromoSchedule(event);
+      if (promoSlots.length === 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "No upcoming event occurrences found to generate promotions for" });
+      }
+
+      // Delete any existing pending promotions for this event
+      await db.deleteEventPromotionsByEventId(event.id);
+
+      // Generate posts for each promo slot
+      const generated: Array<{ promoType: string; scheduledDate: Date; postId: number }> = [];
+
+      for (const slot of promoSlots) {
+        try {
+          // Generate AI content for this promo
+          const promoContent = await generatePromoPostContent(event, brand, slot.promoType, slot.eventOccurrenceDate);
+
+          // Create the post
+          const post = await db.createPost({
+            brandId: event.brandId,
+            content: promoContent.content,
+            contentType: promoContent.contentType as any,
+            scheduledAt: slot.scheduledDate,
+            status: "scheduled",
+            platforms: ["facebook", "instagram"],
+            aiGenerated: true,
+            createdBy: ctx.user.id,
+          });
+
+          // Create the event promotion record
+          const promo = await db.createEventPromotion({
+            eventId: event.id,
+            postId: post.id,
+            brandId: event.brandId,
+            promoType: slot.promoType,
+            eventOccurrenceDate: slot.eventOccurrenceDate,
+            scheduledDate: slot.scheduledDate,
+            status: "generated",
+          });
+
+          generated.push({
+            promoType: slot.promoType,
+            scheduledDate: slot.scheduledDate,
+            postId: post.id,
+          });
+        } catch (err) {
+          console.error(`[EventPromo] Failed to generate promo for slot ${slot.promoType}:`, err);
+        }
+      }
+
+      return { generated, total: promoSlots.length };
+    }),
+
+  getPromotions: protectedProcedure
+    .input(z.object({ eventId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const event = await db.getEventById(input.eventId);
+      if (!event) throw new TRPCError({ code: "NOT_FOUND" });
+      if (ctx.user.role !== "admin") {
+        const brands = await db.getBrandsByClientUserId(ctx.user.id);
+        if (!brands.some(b => b.id === event.brandId)) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+      }
+      return db.getEventPromotionsByEventId(input.eventId);
+    }),
+
+  getPromoPostIds: protectedProcedure
+    .input(z.object({ brandId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin") {
+        const brands = await db.getBrandsByClientUserId(ctx.user.id);
+        if (!brands.some(b => b.id === input.brandId)) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+      }
+      return db.getEventPromoPostIds(input.brandId);
+    }),
+
+  previewSchedule: protectedProcedure
+    .input(z.object({ eventId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const event = await db.getEventById(input.eventId);
+      if (!event) throw new TRPCError({ code: "NOT_FOUND" });
+      if (ctx.user.role !== "admin") {
+        const brands = await db.getBrandsByClientUserId(ctx.user.id);
+        if (!brands.some(b => b.id === event.brandId)) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+      }
+      const slots = buildPromoSchedule(event);
+      const occurrences = getEventOccurrences(event);
+      return { slots, occurrences, totalPosts: slots.length };
+    }),
+});
+
+// ── System Health Router ──────────────────────────────────────────────────
+
+const systemHealthRouter = router({
+  errorLogs: adminProcedure
+    .input(z.object({ limit: z.number().default(100), includeResolved: z.boolean().default(false) }))
+    .query(async ({ input }) => {
+      return db.getErrorLogs(input.limit, input.includeResolved);
+    }),
+
+  errorLogsByBrand: adminProcedure
+    .input(z.object({ brandId: z.number(), limit: z.number().default(50) }))
+    .query(async ({ input }) => {
+      return db.getErrorLogsByBrand(input.brandId, input.limit);
+    }),
+
+  errorStats: adminProcedure.query(async () => {
+    return db.getErrorLogStats();
+  }),
+
+  resolveError: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.resolveErrorLog(input.id, ctx.user.id);
+      return { success: true };
+    }),
+
+  tokenHealth: adminProcedure
+    .input(z.object({ brandId: z.number() }))
+    .query(async ({ input }) => {
+      return checkBrandTokenHealth(input.brandId);
+    }),
+
+  checkUnapproved: adminProcedure
+    .input(z.object({ hoursBeforePublish: z.number().default(24) }))
+    .mutation(async ({ input }) => {
+      const reminded = await checkUnapprovedPosts(input.hoursBeforePublish);
+      return { reminded };
+    }),
+
+  retryPost: adminProcedure
+    .input(z.object({ postId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const post = await db.getPostById(input.postId);
+      if (!post) throw new TRPCError({ code: "NOT_FOUND" });
+      if (post.status !== "failed") throw new TRPCError({ code: "BAD_REQUEST", message: "Post is not in failed state" });
+      // Reset to scheduled for retry
+      await db.updatePost(input.postId, { status: "scheduled" as any });
+      return { success: true };
+    }),
+});
+
 // ── User Management Router (Admin) ─────────────────────────────────────────
 
 const userRouter = router({
@@ -764,6 +1116,8 @@ export const appRouter = router({
   user: userRouter,
   shopify: shopifyRouter,
   service: serviceRouter,
+  event: eventRouter,
+  health: systemHealthRouter,
 });
 
 export type AppRouter = typeof appRouter;
