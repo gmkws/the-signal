@@ -13,6 +13,8 @@ import {
   events, InsertEvent,
   eventPromotions, InsertEventPromotion,
   errorLogs, InsertErrorLog,
+  onboardingState, InsertOnboardingState, OnboardingState,
+  brandInvites, InsertBrandInvite, BrandInvite,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -647,4 +649,110 @@ export async function getPostsNeedingApproval(beforeDate: Date) {
       lte(posts.scheduledAt, beforeDate)
     ))
     .orderBy(asc(posts.scheduledAt));
+}
+
+// ── Onboarding State ──────────────────────────────────────────────────────
+
+export async function getOnboardingStateByUserId(userId: number): Promise<OnboardingState | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(onboardingState).where(eq(onboardingState.userId, userId)).limit(1);
+  return result[0];
+}
+
+export async function upsertOnboardingState(userId: number, data: Partial<InsertOnboardingState>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await getOnboardingStateByUserId(userId);
+  if (existing) {
+    await db.update(onboardingState).set({ ...data, updatedAt: new Date() }).where(eq(onboardingState.userId, userId));
+  } else {
+    await db.insert(onboardingState).values({ userId, ...data });
+  }
+  return getOnboardingStateByUserId(userId);
+}
+
+export async function completeOnboarding(userId: number, brandId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(onboardingState).set({
+    completed: true,
+    completedAt: new Date(),
+    brandId,
+    updatedAt: new Date(),
+  }).where(eq(onboardingState.userId, userId));
+}
+
+export async function getPendingOnboardings(limit = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(onboardingState)
+    .where(and(
+      eq(onboardingState.completed, true),
+      eq(onboardingState.approvalStatus, "pending")
+    ))
+    .orderBy(desc(onboardingState.completedAt))
+    .limit(limit);
+}
+
+export async function approveOnboarding(userId: number, approvedBy: number, tier: "managed" | "premium") {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(onboardingState).set({
+    approvalStatus: "approved",
+    approvedBy,
+    approvedAt: new Date(),
+    updatedAt: new Date(),
+  }).where(eq(onboardingState.userId, userId));
+  // Also update the brand tier
+  const state = await getOnboardingStateByUserId(userId);
+  if (state?.brandId) {
+    await db.update(brands).set({ clientTier: tier, isActive: true }).where(eq(brands.id, state.brandId));
+  }
+}
+
+export async function rejectOnboarding(userId: number, rejectedBy: number, reason: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(onboardingState).set({
+    approvalStatus: "rejected",
+    approvedBy: rejectedBy,
+    approvedAt: new Date(),
+    rejectionReason: reason,
+    updatedAt: new Date(),
+  }).where(eq(onboardingState.userId, userId));
+}
+
+// ── Brand Invites ─────────────────────────────────────────────────────────
+
+export async function createBrandInvite(invite: InsertBrandInvite): Promise<BrandInvite> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(brandInvites).values(invite);
+  const created = await db.select().from(brandInvites).where(eq(brandInvites.id, result[0].insertId)).limit(1);
+  return created[0];
+}
+
+export async function getBrandInviteByToken(token: string): Promise<BrandInvite | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(brandInvites).where(eq(brandInvites.token, token)).limit(1);
+  return result[0];
+}
+
+export async function markInviteUsed(token: string, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(brandInvites).set({
+    usedAt: new Date(),
+    usedByUserId: userId,
+  }).where(eq(brandInvites.token, token));
+}
+
+export async function getInvitesByCreator(createdBy: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(brandInvites)
+    .where(eq(brandInvites.createdBy, createdBy))
+    .orderBy(desc(brandInvites.createdAt));
 }

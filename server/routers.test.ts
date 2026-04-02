@@ -74,6 +74,16 @@ vi.mock("./db", () => ({
   getSocialAccountById: vi.fn().mockResolvedValue(null),
   // Posts (additional)
   getPostsNeedingApproval: vi.fn().mockResolvedValue([]),
+  // Onboarding
+  getOnboardingStateByUserId: vi.fn().mockResolvedValue(null),
+  upsertOnboardingState: vi.fn().mockResolvedValue(undefined),
+  completeOnboarding: vi.fn().mockResolvedValue(undefined),
+  getPendingOnboardings: vi.fn().mockResolvedValue([]),
+  approveOnboarding: vi.fn().mockResolvedValue(undefined),
+  rejectOnboarding: vi.fn().mockResolvedValue(undefined),
+  createBrandInvite: vi.fn().mockResolvedValue({ id: 1, token: "test-token-abc123", tier: "managed", brandName: null, email: null, expiresAt: null, usedAt: null }),
+  getBrandInviteByToken: vi.fn().mockResolvedValue(null),
+  getInvitesByCreator: vi.fn().mockResolvedValue([]),
 }));
 
 // ── Mock services ─────────────────────────────────────────────────────────
@@ -915,5 +925,156 @@ describe("health.checkUnapproved", () => {
     // The router returns { reminded } from checkUnapprovedPosts service
     expect(result).toHaveProperty("reminded");
     expect(typeof result.reminded).toBe("number");
+  });
+});
+
+// ─── Onboarding Router Tests ────────────────────────────────────────────────
+
+describe("onboarding.getState", () => {
+  it("returns null when no onboarding state exists", async () => {
+    vi.mocked(db.getOnboardingStateByUserId).mockResolvedValueOnce(null);
+    const caller = appRouter.createCaller(createClientContext());
+    const result = await caller.onboarding.getState();
+    expect(result).toBeNull();
+  });
+
+  it("returns onboarding state when it exists", async () => {
+    const mockState = {
+      id: 1, userId: 2, currentStep: 3,
+      stepData: { step1: { brandName: "Test Brand" } },
+      completed: false, approvalStatus: "pending",
+      createdAt: new Date(), updatedAt: new Date(),
+    };
+    vi.mocked(db.getOnboardingStateByUserId).mockResolvedValueOnce(mockState as any);
+    const caller = appRouter.createCaller(createClientContext());
+    const result = await caller.onboarding.getState();
+    expect(result).toEqual(mockState);
+  });
+
+  it("rejects unauthenticated access", async () => {
+    const caller = appRouter.createCaller(createUnauthContext());
+    await expect(caller.onboarding.getState()).rejects.toThrow(UNAUTHED_ERR_MSG);
+  });
+});
+
+describe("onboarding.saveStep", () => {
+  it("saves step data for authenticated user", async () => {
+    vi.mocked(db.getOnboardingStateByUserId).mockResolvedValueOnce(null);
+    vi.mocked(db.upsertOnboardingState).mockResolvedValueOnce(undefined);
+    const caller = appRouter.createCaller(createClientContext());
+    const result = await caller.onboarding.saveStep({ step: 1, data: { brandName: "My Brand" } });
+    expect(result).toEqual({ success: true });
+    expect(db.upsertOnboardingState).toHaveBeenCalledWith(
+      expect.any(Number),
+      expect.objectContaining({ currentStep: 1 })
+    );
+  });
+
+  it("rejects unauthenticated access", async () => {
+    const caller = appRouter.createCaller(createUnauthContext());
+    await expect(caller.onboarding.saveStep({ step: 1, data: {} })).rejects.toThrow(UNAUTHED_ERR_MSG);
+  });
+});
+
+describe("onboarding.complete", () => {
+  it("creates brand and marks onboarding complete", async () => {
+    vi.mocked(db.getBrandCount).mockResolvedValueOnce(0);
+    vi.mocked(db.createBrand).mockResolvedValueOnce({ id: 10 } as any);
+    vi.mocked(db.completeOnboarding).mockResolvedValueOnce(undefined);
+    const caller = appRouter.createCaller(createClientContext());
+    const result = await caller.onboarding.complete({
+      brandName: "Acme Roofing",
+      tone: "professional", style: "direct",
+      keywords: ["roofing"], avoidWords: [],
+      samplePosts: [], customInstructions: "",
+      postsPerDay: 1, autoPost: false,
+    });
+    expect(result).toHaveProperty("success", true);
+    expect(result).toHaveProperty("brandId");
+    expect(db.createBrand).toHaveBeenCalled();
+  });
+
+  it("rejects when brand limit is reached", async () => {
+    vi.mocked(db.getBrandCount).mockResolvedValueOnce(5);
+    const caller = appRouter.createCaller(createClientContext());
+    await expect(caller.onboarding.complete({
+      brandName: "New Brand",
+      tone: "professional", style: "direct",
+      keywords: [], avoidWords: [],
+      samplePosts: [], customInstructions: "",
+      postsPerDay: 1, autoPost: false,
+    })).rejects.toThrow(/Maximum of 5 brands/);
+  });
+});
+
+describe("onboarding.getPending (admin)", () => {
+  it("returns pending onboardings for admin", async () => {
+    const mockPending = [{ id: 1, userId: 2, currentStep: 5, completed: true, approvalStatus: "pending", stepData: {} }];
+    vi.mocked(db.getPendingOnboardings).mockResolvedValueOnce(mockPending as any);
+    const caller = appRouter.createCaller(createAdminContext());
+    const result = await caller.onboarding.getPending();
+    expect(result).toEqual(mockPending);
+  });
+
+  it("rejects non-admin access", async () => {
+    const caller = appRouter.createCaller(createClientContext());
+    await expect(caller.onboarding.getPending()).rejects.toThrow(NOT_ADMIN_ERR_MSG);
+  });
+});
+
+describe("onboarding.approve (admin)", () => {
+  it("approves a pending onboarding", async () => {
+    vi.mocked(db.approveOnboarding).mockResolvedValueOnce(undefined);
+    vi.mocked(db.getBrandById).mockResolvedValueOnce({ id: 5, name: "Test Brand", clientUserId: 2 } as any);
+    const caller = appRouter.createCaller(createAdminContext());
+    vi.mocked(db.getOnboardingStateByUserId).mockResolvedValueOnce(null);
+    const result = await caller.onboarding.approve({ userId: 2, tier: "premium" });
+    expect(result).toHaveProperty("success", true);
+    expect(db.approveOnboarding).toHaveBeenCalledWith(2, 1, "premium");
+  });
+
+  it("rejects non-admin access", async () => {
+    const caller = appRouter.createCaller(createClientContext());
+    await expect(caller.onboarding.approve({ userId: 2, tier: "managed" })).rejects.toThrow(NOT_ADMIN_ERR_MSG);
+  });
+});
+
+describe("onboarding.reject (admin)", () => {
+  it("rejects a pending onboarding with reason", async () => {
+    vi.mocked(db.rejectOnboarding).mockResolvedValueOnce(undefined);
+    const caller = appRouter.createCaller(createAdminContext());
+    const result = await caller.onboarding.reject({ userId: 2, reason: "Duplicate account" });
+    expect(result).toHaveProperty("success", true);
+    // router calls rejectOnboarding(userId, adminId, reason)
+    expect(db.rejectOnboarding).toHaveBeenCalledWith(2, 1, "Duplicate account");
+  });
+
+  it("rejects non-admin access", async () => {
+    const caller = appRouter.createCaller(createClientContext());
+    await expect(caller.onboarding.reject({ userId: 2, reason: "test" })).rejects.toThrow(NOT_ADMIN_ERR_MSG);
+  });
+});
+
+describe("onboarding.createInvite (admin)", () => {
+  it("creates an invite link for a new client", async () => {
+    vi.mocked(db.createBrandInvite).mockResolvedValueOnce({
+      id: 1, token: "test-token-abc123", tier: "managed",
+      brandName: "Invited Brand", email: "client@example.com",
+      expiresAt: null, usedAt: null,
+    } as any);
+    const caller = appRouter.createCaller(createAdminContext());
+    const result = await caller.onboarding.createInvite({
+      email: "client@example.com", tier: "managed",
+      brandName: "Invited Brand",
+    });
+    expect(result).toHaveProperty("inviteUrl");
+    expect(result.inviteUrl).toContain("test-token-abc123");
+  });
+
+  it("rejects non-admin access", async () => {
+    const caller = appRouter.createCaller(createClientContext());
+    await expect(caller.onboarding.createInvite({
+      email: "x@x.com", tier: "managed",
+    })).rejects.toThrow(NOT_ADMIN_ERR_MSG);
   });
 });

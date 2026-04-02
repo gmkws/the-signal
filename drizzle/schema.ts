@@ -325,3 +325,56 @@ export const errorLogs = mysqlTable("error_logs", {
 
 export type ErrorLog = typeof errorLogs.$inferSelect;
 export type InsertErrorLog = typeof errorLogs.$inferInsert;
+
+// ── Onboarding State ──────────────────────────────────────────────────────
+export const onboardingState = mysqlTable("onboarding_state", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(), // One onboarding record per user
+  // Current step (1-6)
+  currentStep: int("currentStep").default(1).notNull(),
+  // Step data saved as JSON blobs
+  stepData: json("stepData").$type<{
+    step1?: { brandName: string; industry: string; website?: string; location?: string };
+    step2?: { tone: string; style: string; keywords: string[]; avoidWords: string[]; samplePosts: string[]; customInstructions: string };
+    step3?: { contentSource: "shopify" | "services" | "both" | "general"; shopifyDomain?: string; shopifyToken?: string };
+    step4?: { facebookConnected: boolean; instagramConnected: boolean };
+    step5?: { postsPerDay: number; preferredTimes: string[]; autoPost: boolean };
+  }>(),
+  // Whether onboarding is complete
+  completed: boolean("completed").default(false).notNull(),
+  completedAt: timestamp("completedAt"),
+  // Brand created during onboarding
+  brandId: int("brandId"),
+  // Admin approval status
+  approvalStatus: mysqlEnum("approvalStatus", ["pending", "approved", "rejected"]).default("pending").notNull(),
+  approvedBy: int("approvedBy"),
+  approvedAt: timestamp("approvedAt"),
+  rejectionReason: text("rejectionReason"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type OnboardingState = typeof onboardingState.$inferSelect;
+export type InsertOnboardingState = typeof onboardingState.$inferInsert;
+
+// ── Brand Invites ─────────────────────────────────────────────────────────
+export const brandInvites = mysqlTable("brand_invites", {
+  id: int("id").autoincrement().primaryKey(),
+  token: varchar("token", { length: 128 }).notNull().unique(),
+  email: varchar("email", { length: 320 }),
+  // Pre-set tier for the invited client
+  tier: mysqlEnum("tier", ["managed", "premium"]).default("managed").notNull(),
+  // Optional: pre-fill brand name
+  brandName: varchar("brandName", { length: 200 }),
+  // Who created the invite
+  createdBy: int("createdBy").notNull(),
+  // When it expires (null = never)
+  expiresAt: timestamp("expiresAt"),
+  // When it was used
+  usedAt: timestamp("usedAt"),
+  usedByUserId: int("usedByUserId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type BrandInvite = typeof brandInvites.$inferSelect;
+export type InsertBrandInvite = typeof brandInvites.$inferInsert;

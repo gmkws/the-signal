@@ -29,6 +29,13 @@
       "when": 1775164853355,
       "tag": "0003_quick_gorilla_man",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1775171421824,
+      "tag": "0004_familiar_shaman",
+      "breakpoints": true
     }
   ]
 }

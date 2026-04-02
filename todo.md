@@ -129,3 +129,25 @@
 - [x] Template-based graphics fallback for quotes, stats, tips post types
 - [x] Integration with existing AI Engine page for smart image workflow
 - [x] tRPC router for smart image generation with text overlay
+
+## Self-Service Onboarding & GMK Branding
+- [x] Database: onboarding_state table (user_id, step, data JSON, completed)
+- [x] Database: brand_invites table (token, email, tier, created_by, used_at)
+- [x] tRPC router: onboarding CRUD (save step, complete, get state)
+- [x] tRPC router: AI onboarding assistant (context-aware LLM chat during setup)
+- [x] tRPC router: admin brand approval (approve/reject pending brands, set tier)
+- [x] tRPC router: generate invite link with signed token
+- [x] Onboarding wizard UI: Step 1 - Brand basics (name, industry, website)
+- [x] Onboarding wizard UI: Step 2 - Brand voice (tone, style, sample posts)
+- [x] Onboarding wizard UI: Step 3 - Content sources (Shopify or Service Spotlight)
+- [x] Onboarding wizard UI: Step 4 - Social accounts (connect Facebook/Instagram)
+- [x] Onboarding wizard UI: Step 5 - Schedule preferences (post frequency, times)
+- [x] Onboarding wizard UI: Step 6 - Review & launch
+- [x] AI onboarding assistant chat widget (floating, context-aware)
+- [x] Route guard: new users (no brand) → redirect to onboarding wizard
+- [x] Admin approval gate: notify Gerrit when new brand is submitted
+- [x] Admin UI: pending brands approval queue in dashboard (OnboardingApproval page)
+- [x] Landing page: "The Signal by GMK Web Solutions" branding
+- [x] Login page: GMK logo + tagline
+- [x] Sidebar footer: "Powered by GMK Web Solutions"
+- [x] Subdomain-ready: meta tags, og:title, og:description for thesignal.gmkwebsolutions.com

@@ -41,6 +41,8 @@ import {
   Radio,
   Wrench,
   ShieldAlert,
+  UserPlus,
+  Sparkles,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -63,11 +65,13 @@ const adminMenuItems = [
   { icon: Globe, label: "Integrations", path: "/admin/social" },
   { icon: Wrench, label: "Service Spotlight", path: "/admin/services" },
   { icon: ShieldAlert, label: "System Health", path: "/admin/system-health" },
+  { icon: UserPlus, label: "Onboarding", path: "/admin/onboarding" },
   { icon: Users, label: "Users", path: "/admin/users" },
 ];
 
 const clientMenuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/client" },
+  { icon: Sparkles, label: "Setup Checklist", path: "/client/welcome" },
   { icon: Calendar, label: "Calendar", path: "/client/calendar" },
   { icon: CalendarDays, label: "Events", path: "/client/events" },
   { icon: FileText, label: "Posts", path: "/client/posts" },
@@ -247,8 +251,9 @@ function DashboardLayoutContent({
 
           <SidebarFooter className="p-3">
             <SidebarSeparator className="mb-3" />
-            <div className="flex items-center justify-center mb-2 group-data-[collapsible=icon]:hidden">
-              <img src={GMK_LOGO_URL} alt="GMK" className="h-6 opacity-50" />
+            <div className="flex flex-col items-center justify-center mb-2 gap-0.5 group-data-[collapsible=icon]:hidden">
+              <img src={GMK_LOGO_URL} alt="GMK" className="h-5 opacity-40" />
+              <span className="text-[10px] text-muted-foreground/50 tracking-wide">Powered by GMK Web Solutions</span>
             </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

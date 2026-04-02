@@ -29,9 +29,12 @@ import ClientPosts from "./pages/client/Posts";
 import ClientNotifications from "./pages/client/Notifications";
 import ClientServiceSpotlight from "./pages/client/ServiceSpotlight";
 import ClientEvents from "./pages/client/Events";
+import ClientWelcome from "./pages/client/Welcome";
 
 // Landing
 import Home from "./pages/Home";
+import Onboarding from "./pages/Onboarding";
+import AdminOnboardingApproval from "./pages/admin/OnboardingApproval";
 
 /** Route guard: redirects non-admin users away from /admin/* routes */
 function AdminGuard({ children }: { children: React.ReactNode }) {
@@ -68,11 +71,12 @@ function AuthRouter() {
 
   if (loading) return <LoadingScreen />;
 
-  // Unauthenticated: only allow landing page
+  // Unauthenticated: allow landing page and onboarding (with invite token)
   if (!user) {
     return (
       <Switch>
         <Route path="/" component={Home} />
+        <Route path="/onboarding" component={Onboarding} />
         <Route><Redirect to="/" /></Route>
       </Switch>
     );
@@ -83,6 +87,9 @@ function AuthRouter() {
   return (
     <DashboardLayout>
       <Switch>
+        {/* Onboarding — accessible to all authenticated users */}
+        <Route path="/onboarding" component={Onboarding} />
+
         {/* Admin routes — guarded */}
         <Route path="/admin">
           <AdminGuard><AdminDashboard /></AdminGuard>
@@ -120,6 +127,9 @@ function AuthRouter() {
         <Route path="/admin/system-health">
           <AdminGuard><AdminSystemHealth /></AdminGuard>
         </Route>
+        <Route path="/admin/onboarding">
+          <AdminGuard><AdminOnboardingApproval /></AdminGuard>
+        </Route>
 
         {/* Client routes — guarded */}
         <Route path="/client">
@@ -139,6 +149,9 @@ function AuthRouter() {
         </Route>
         <Route path="/client/events">
           <ClientGuard><ClientEvents /></ClientGuard>
+        </Route>
+        <Route path="/client/welcome">
+          <ClientGuard><ClientWelcome /></ClientGuard>
         </Route>
 
         {/* Root redirect based on role */}

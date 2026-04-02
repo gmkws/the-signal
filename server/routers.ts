@@ -1087,6 +1087,208 @@ const systemHealthRouter = router({
     }),
 });
 
+// ── Onboarding Router ────────────────────────────────────────────────────
+
+const onboardingRouter = router({
+  // Get current user's onboarding state
+  getState: protectedProcedure.query(async ({ ctx }) => {
+    return db.getOnboardingStateByUserId(ctx.user.id);
+  }),
+
+  // Save progress for a step
+  saveStep: protectedProcedure
+    .input(z.object({
+      step: z.number().min(1).max(6),
+      data: z.record(z.string(), z.any()),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const existing = await db.getOnboardingStateByUserId(ctx.user.id);
+      const currentStepData = (existing?.stepData as Record<string, any>) || {};
+      const updatedStepData = { ...currentStepData, [`step${input.step}`]: input.data };
+      await db.upsertOnboardingState(ctx.user.id, {
+        currentStep: Math.max(input.step, existing?.currentStep || 1),
+        stepData: updatedStepData,
+      });
+      return { success: true };
+    }),
+
+  // Complete onboarding — creates the brand record
+  complete: protectedProcedure
+    .input(z.object({
+      brandName: z.string().min(1).max(200),
+      industry: z.string().optional(),
+      website: z.string().optional(),
+      location: z.string().optional(),
+      tone: z.string().default("professional"),
+      style: z.string().default("direct"),
+      keywords: z.array(z.string()).default([]),
+      avoidWords: z.array(z.string()).default([]),
+      samplePosts: z.array(z.string()).default([]),
+      customInstructions: z.string().default(""),
+      postsPerDay: z.number().min(1).max(4).default(1),
+      autoPost: z.boolean().default(false),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Check brand limit
+      const count = await db.getBrandCount();
+      if (count >= MAX_BRANDS) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: `Maximum of ${MAX_BRANDS} brands reached. Please contact GMK Web Solutions.` });
+      }
+      // Generate slug from brand name
+      const slug = input.brandName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")
+        .substring(0, 100);
+      // Create the brand (inactive until admin approves)
+      const { id: brandId } = await db.createBrand({
+        name: input.brandName,
+        slug: `${slug}-${Date.now()}`,
+        industry: input.industry,
+        website: input.website,
+        location: input.location,
+        clientUserId: ctx.user.id,
+        clientTier: "managed", // Default until admin sets it
+        autoPostEnabled: input.autoPost,
+        isActive: false, // Inactive until approved
+        voiceSettings: {
+          tone: input.tone,
+          style: input.style,
+          keywords: input.keywords,
+          avoidWords: input.avoidWords,
+          samplePosts: input.samplePosts,
+          customInstructions: input.customInstructions,
+        },
+      });
+      // Mark onboarding complete
+      await db.completeOnboarding(ctx.user.id, brandId);
+      // Notify admin
+      try {
+        const { notifyOwner } = await import("./_core/notification");
+        await notifyOwner({
+          title: `New brand signup: ${input.brandName}`,
+          content: `${ctx.user.name || ctx.user.email} has completed onboarding for brand "${input.brandName}". Review and approve in the admin dashboard.`,
+        });
+      } catch (e) {
+        console.warn("[Onboarding] Failed to notify owner:", e);
+      }
+      return { brandId, success: true };
+    }),
+
+  // AI assistant for onboarding questions
+  askAssistant: protectedProcedure
+    .input(z.object({
+      question: z.string().min(1).max(1000),
+      currentStep: z.number().min(1).max(6),
+      brandName: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { invokeLLM } = await import("./_core/llm");
+      const systemPrompt = `You are a friendly onboarding assistant for "The Signal" — a social media automation platform by GMK Web Solutions. 
+You help new clients set up their brand profile. Be concise, helpful, and encouraging.
+
+The Signal helps businesses automate their social media with AI-generated content for Facebook and Instagram.
+Key features: AI content generation, scheduled posting, multiple content formats (tips, product spotlights, service highlights, event promotion).
+
+The user is on step ${input.currentStep} of 6:
+1. Brand basics (name, industry, website, location)
+2. Brand voice (tone, style, keywords)
+3. Content sources (Shopify store, services, or general)
+4. Social accounts (Facebook/Instagram connection)
+5. Schedule preferences (how often to post)
+6. Review & launch
+
+Answer questions about these steps concisely. If asked about pricing or billing, say to contact GMK Web Solutions directly.`;
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: input.question },
+        ],
+      });
+      return { answer: response.choices[0]?.message?.content || "I'm not sure — please contact GMK Web Solutions for help." };
+    }),
+
+  // Admin: get pending onboardings for approval
+  getPending: adminProcedure.query(async () => {
+    return db.getPendingOnboardings();
+  }),
+
+  // Admin: approve a brand
+  approve: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      tier: z.enum(["managed", "premium"]).default("managed"),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await db.approveOnboarding(input.userId, ctx.user.id, input.tier);
+      // Notify the client
+      const state = await db.getOnboardingStateByUserId(input.userId);
+      if (state?.brandId) {
+        await db.createNotification({
+          brandId: state.brandId,
+          type: "system",
+          title: "Your brand has been approved!",
+          message: `Your brand is now live on The Signal. You can start creating and scheduling content.`,
+          toRole: "client",
+        });
+      }
+      return { success: true };
+    }),
+
+  // Admin: reject a brand
+  reject: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      reason: z.string().min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await db.rejectOnboarding(input.userId, ctx.user.id, input.reason);
+      return { success: true };
+    }),
+
+  // Admin: generate invite link
+  createInvite: adminProcedure
+    .input(z.object({
+      email: z.string().email().optional(),
+      tier: z.enum(["managed", "premium"]).default("managed"),
+      brandName: z.string().optional(),
+      expiresInDays: z.number().default(7),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { nanoid } = await import("nanoid");
+      const token = nanoid(48);
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + input.expiresInDays);
+      const invite = await db.createBrandInvite({
+        token,
+        email: input.email,
+        tier: input.tier,
+        brandName: input.brandName,
+        createdBy: ctx.user.id,
+        expiresAt,
+      });
+      return { token: invite.token, inviteUrl: `/onboarding?invite=${invite.token}` };
+    }),
+
+  // Validate an invite token (public — used before login)
+  validateInvite: publicProcedure
+    .input(z.object({ token: z.string() }))
+    .query(async ({ input }) => {
+      const invite = await db.getBrandInviteByToken(input.token);
+      if (!invite) throw new TRPCError({ code: "NOT_FOUND", message: "Invite not found" });
+      if (invite.usedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Invite already used" });
+      if (invite.expiresAt && invite.expiresAt < new Date()) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Invite has expired" });
+      }
+      return { valid: true, tier: invite.tier, brandName: invite.brandName, email: invite.email };
+    }),
+
+  // Get all invites (admin)
+  listInvites: adminProcedure.query(async ({ ctx }) => {
+    return db.getInvitesByCreator(ctx.user.id);
+  }),
+});
+
 // ── User Management Router (Admin) ─────────────────────────────────────────
 
 const userRouter = router({
@@ -1118,6 +1320,7 @@ export const appRouter = router({
   service: serviceRouter,
   event: eventRouter,
   health: systemHealthRouter,
+  onboarding: onboardingRouter,
 });
 
 export type AppRouter = typeof appRouter;
