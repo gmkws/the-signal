@@ -53,6 +53,16 @@ The Signal is a full-featured social media automation platform that generates AI
 - Scheduled posting with configurable times
 - Post queue management
 
+### Auto-Posting Scheduler (Cron Engine)
+- Runs every 5 minutes via in-process `setInterval` (no external cron required)
+- Alternatively triggered via `GET /api/cron/publish` for Railway or external cron jobs
+- Queries posts with status `scheduled` or `approved` where `scheduledAt <= NOW()`
+- Publishes to Facebook and/or Instagram via Meta Graph API
+- Retry logic: up to 3 attempts per post with failure tracking
+- Token expiration detection with immediate admin notification
+- All activity logged to System Health dashboard (`error_logs` table)
+- Optional `CRON_SECRET` env var to protect the HTTP endpoint
+
 ---
 
 ## Tech Stack
@@ -89,6 +99,13 @@ server/
   services/
     meta.ts            # Meta Graph API integration
     contentEngine.ts   # AI content generation service
+    cronEngine.ts      # Auto-posting scheduler (cron engine)
+    guardrails.ts      # Failure guardrails and retry logic
+    eventPromotion.ts  # Event promotion sequence generator
+    shopify.ts         # Shopify product catalog integration
+    imageOverlay.ts    # SVG text overlay for AI images
+  db/
+    seedGMK.ts         # GMK Web Solutions seed script
   storage.ts           # S3 file storage helpers
 
 drizzle/
@@ -133,16 +150,36 @@ The database schema is managed by Drizzle ORM. Tables include:
 
 - `users` — Authentication and role management
 - `brands` — Client brands with voice settings
-- `posts` — Content posts with scheduling and status tracking
+- `posts` — Content posts with scheduling, retry tracking, and status
 - `social_accounts` — Connected Facebook/Instagram accounts
 - `notifications` — Client-admin notification system
-- `analytics` — Post performance metrics
+- `analytics_snapshots` — Post performance metrics
+- `error_logs` — System health and cron activity log
+- `events` — Event calendar with promotion sequences
+- `services` — Service spotlight for service-based businesses
+- `shopify_connections` — Shopify store integrations
+- `shopify_products` — Synced product catalog
 
 To push schema changes:
 
 ```bash
 pnpm db:push
 ```
+
+### Seeding GMK Web Solutions
+
+To seed GMK Web Solutions as the first brand (with all services and brand voice settings):
+
+```bash
+npx tsx server/db/seedGMK.ts
+```
+
+This creates:
+- The GMK Web Solutions brand (Premium tier, auto-post enabled)
+- 5 service records (Web Dev, AI Automation, SEO, Creative/Design, Print Production)
+- Full brand voice settings with keywords, sample posts, and content instructions
+
+The script is idempotent — running it multiple times will update existing records rather than creating duplicates.
 
 ---
 
@@ -181,6 +218,64 @@ pnpm start
 
 ---
 
+## Auto-Posting Scheduler Setup
+
+The Signal includes a built-in cron engine that automatically publishes scheduled posts. There are two modes:
+
+### Mode 1: In-Process Scheduler (Default)
+
+By default, the server runs an internal `setInterval` that fires every 5 minutes. No external configuration is needed. This is the simplest option for most deployments.
+
+To disable the in-process scheduler (when using an external cron), set:
+
+```bash
+DISABLE_IN_PROCESS_CRON=true
+```
+
+### Mode 2: External HTTP Cron (Railway, Render, etc.)
+
+The cron endpoint is available at:
+
+```
+GET  /api/cron/publish
+POST /api/cron/publish
+```
+
+To secure the endpoint, set a `CRON_SECRET` environment variable. The caller must then include:
+
+```
+Authorization: Bearer <CRON_SECRET>
+```
+
+or append `?secret=<CRON_SECRET>` to the URL.
+
+#### Railway Cron Configuration
+
+In your `railway.toml` (or Railway dashboard), add a cron job:
+
+```toml
+[cron]
+  schedule = "*/5 * * * *"
+  command = "curl -s -X GET $RAILWAY_PUBLIC_DOMAIN/api/cron/publish -H 'Authorization: Bearer $CRON_SECRET'"
+```
+
+Or use Railway's built-in cron service to call the endpoint every 5 minutes.
+
+### What the Cron Engine Does
+
+Each run performs the following:
+
+1. Queries posts with status `scheduled` or `approved` where `scheduledAt <= NOW()`
+2. For each due post, publishes to the configured platforms (Facebook and/or Instagram)
+3. On success: updates post status to `published`, records `publishedAt` timestamp
+4. On failure: increments `retryCount`; after 3 failures, marks post as `failed` and notifies admin
+5. Detects token expiration errors and sends immediate admin notification
+6. Checks for posts approaching their scheduled time that still need approval
+7. Checks for social account tokens expiring within 7 days
+8. Logs all activity to the `error_logs` table (visible in System Health dashboard)
+
+---
+
 ## Deployment
 
 ### Railway
@@ -189,6 +284,7 @@ pnpm start
 2. Add a MySQL database service
 3. Set environment variables in the Railway dashboard
 4. Deploy — Railway will auto-detect the build and start commands
+5. (Optional) Add a cron job to call `/api/cron/publish` every 5 minutes and set `DISABLE_IN_PROCESS_CRON=true`
 
 ### Render
 
@@ -197,6 +293,7 @@ pnpm start
 3. Set start command: `pnpm start`
 4. Add environment variables in the Render dashboard
 5. Provision a MySQL database and set `DATABASE_URL`
+6. The in-process scheduler will start automatically — no additional cron configuration needed
 
 ### DigitalOcean App Platform
 
@@ -205,10 +302,18 @@ pnpm start
 3. Set run command: `pnpm start`
 4. Add a managed MySQL database
 5. Configure environment variables
+6. The in-process scheduler will start automatically — no additional cron configuration needed
 
 ### Custom Domain
 
-The application is designed to be hosted at `app.gmkwebsolutions.com`. Configure your DNS to point to your hosting provider's assigned URL.
+The application is designed to be hosted at `thesignal.gmkwebsolutions.com`. Configure your DNS to point to your hosting provider's assigned URL.
+
+### Optional Environment Variables for Cron
+
+| Variable | Description | Default |
+|----------|-------------|--------|
+| `CRON_SECRET` | Secret token to protect `/api/cron/publish` endpoint | None (open) |
+| `DISABLE_IN_PROCESS_CRON` | Set to `true` to disable the built-in 5-minute scheduler | `false` |
 
 ---
 
@@ -243,6 +348,7 @@ Test coverage includes:
 - Social account management
 - AI content generation
 - Analytics queries
+- **Cron engine** — post filtering, publishing, retry logic, token expiration detection, multi-post processing
 
 ---
 

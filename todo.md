@@ -151,3 +151,24 @@
 - [x] Login page: GMK logo + tagline
 - [x] Sidebar footer: "Powered by GMK Web Solutions"
 - [x] Subdomain-ready: meta tags, og:title, og:description for thesignal.gmkwebsolutions.com
+
+## Cron Auto-Posting Scheduler
+- [x] /api/cron/publish endpoint (Railway-compatible GET+POST, setInterval fallback)
+- [x] Query posts due to publish (scheduled time passed, status scheduled/approved)
+- [x] Call Meta Graph API for Facebook Page posts
+- [x] Call Meta Graph API for Instagram Business posts
+- [x] On success: mark post published with timestamp
+- [x] On failure: increment retry count, mark failed after 3 attempts, notify admin
+- [x] Token expiration detection and warning
+- [x] Log all cron activity to error_logs / System Health
+- [x] Cron secret key protection (CRON_SECRET env var, optional)
+- [x] setInterval fallback for non-Railway hosting (DISABLE_IN_PROCESS_CRON flag)
+
+## GMK Web Solutions Brand Seed
+- [x] Seed brand: GMK Web Solutions (Gerrit, Hillsboro OR) — Brand ID 1
+- [x] Seed brand voice settings (professional, direct, no-fluff, educational, value-first)
+- [x] Seed 5 services in Service Spotlight
+- [x] Seed service areas (Hillsboro, Beaverton, Tigard, Forest Grove, Aloha, Washington County)
+- [x] Seed content type preferences and posting frequency
+- [x] Vitest tests for cron scheduler logic (16 tests, 95 total passing)
+- [x] README updated with cron setup and seed script documentation

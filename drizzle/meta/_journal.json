@@ -36,6 +36,13 @@
       "when": 1775171421824,
       "tag": "0004_familiar_shaman",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1775172961280,
+      "tag": "0005_burly_yellow_claw",
+      "breakpoints": true
     }
   ]
 }

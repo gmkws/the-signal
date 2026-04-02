@@ -108,6 +108,9 @@ export const posts = mysqlTable("posts", {
   // Meta API response data
   facebookPostId: varchar("facebookPostId", { length: 200 }),
   instagramPostId: varchar("instagramPostId", { length: 200 }),
+  // Retry tracking for failed posts
+  retryCount: int("retryCount").default(0).notNull(),
+  lastFailureReason: text("lastFailureReason"),
   // AI generation metadata
   aiGenerated: boolean("aiGenerated").default(false).notNull(),
   // Who created/modified
