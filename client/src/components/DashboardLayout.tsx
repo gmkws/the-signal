@@ -43,6 +43,7 @@ import {
   ShieldAlert,
   UserPlus,
   Sparkles,
+  UserCheck,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -64,6 +65,7 @@ const adminMenuItems = [
   { icon: Bell, label: "Notifications", path: "/admin/notifications" },
   { icon: Globe, label: "Integrations", path: "/admin/social" },
   { icon: Wrench, label: "Service Spotlight", path: "/admin/services" },
+  { icon: UserCheck, label: "Leads", path: "/admin/leads" },
   { icon: ShieldAlert, label: "System Health", path: "/admin/system-health" },
   { icon: UserPlus, label: "Onboarding", path: "/admin/onboarding" },
   { icon: Users, label: "Users", path: "/admin/users" },
@@ -76,6 +78,7 @@ const clientMenuItems = [
   { icon: CalendarDays, label: "Events", path: "/client/events" },
   { icon: FileText, label: "Posts", path: "/client/posts" },
   { icon: Wrench, label: "Service Spotlight", path: "/client/services" },
+  { icon: UserCheck, label: "Leads", path: "/client/leads" },
   { icon: Bell, label: "Notifications", path: "/client/notifications" },
 ];
 

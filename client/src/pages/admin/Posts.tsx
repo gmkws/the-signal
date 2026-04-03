@@ -9,17 +9,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FileText, Plus, Pencil, Trash2, Send, Eye, Image as ImageIcon, Facebook } from "lucide-react";
+import { FileText, Plus, Pencil, Trash2, Eye, Image as ImageIcon, ImageOff } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { POST_STATUS_LABELS, CONTENT_TYPE_LABELS } from "@shared/types";
+import { PostPreviewPanel } from "@/components/PostPreviewPanel";
 
 export default function AdminPosts() {
   const utils = trpc.useUtils();
   const [selectedBrand, setSelectedBrand] = useState<string>("all");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
+  const [needsImageOnly, setNeedsImageOnly] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [previewPost, setPreviewPost] = useState<any>(null);
   const [viewPost, setViewPost] = useState<any>(null);
   const [form, setForm] = useState({
     brandId: "", content: "", imageUrl: "", contentType: "custom",
@@ -111,6 +114,10 @@ export default function AdminPosts() {
     }));
   };
 
+  // Derived filtered list
+  const filteredPosts = (posts ?? []).filter(p => !needsImageOnly || !p.imageUrl);
+  const needsImageCount = (posts ?? []).filter(p => !p.imageUrl).length;
+
   const PostForm = () => (
     <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
       <div className="space-y-2">
@@ -189,7 +196,7 @@ export default function AdminPosts() {
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <Select value={selectedBrand} onValueChange={setSelectedBrand}>
           <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Brands" /></SelectTrigger>
           <SelectContent>
@@ -206,6 +213,21 @@ export default function AdminPosts() {
             ))}
           </SelectContent>
         </Select>
+        {/* Needs Image quick filter */}
+        <Button
+          variant={needsImageOnly ? "default" : "outline"}
+          size="sm"
+          className="gap-2 shrink-0"
+          onClick={() => setNeedsImageOnly(v => !v)}
+        >
+          <ImageOff className="h-4 w-4" />
+          Needs Image
+          {needsImageCount > 0 && (
+            <span className={`text-xs px-1.5 py-0.5 rounded-full ${needsImageOnly ? "bg-background/20" : "bg-muted"}`}>
+              {needsImageCount}
+            </span>
+          )}
+        </Button>
       </div>
 
       {/* Create Dialog */}
@@ -236,14 +258,46 @@ export default function AdminPosts() {
         </DialogContent>
       </Dialog>
 
+      {/* Post Preview Dialog */}
+      <Dialog open={!!previewPost} onOpenChange={(open) => { if (!open) setPreviewPost(null); }}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="h-4 w-4" />
+              Post Preview
+              {previewPost && (
+                <Badge variant="outline" className="text-xs ml-2">
+                  {getBrandName(previewPost.brandId)}
+                </Badge>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          {previewPost && (
+            <PostPreviewPanel
+              content={previewPost.content}
+              imageUrl={previewPost.imageUrl || undefined}
+              isCarousel={previewPost.isCarousel ?? false}
+              carouselSlides={previewPost.carouselSlides ?? []}
+              brandName={getBrandName(previewPost.brandId)}
+            />
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { openEdit(previewPost); setPreviewPost(null); }}>
+              <Pencil className="h-4 w-4 mr-2" /> Edit Post
+            </Button>
+            <DialogClose asChild><Button>Close</Button></DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Posts List */}
       {isLoading ? (
         <div className="space-y-3">
           {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-24 w-full rounded-xl" />)}
         </div>
-      ) : posts && posts.length > 0 ? (
+      ) : filteredPosts.length > 0 ? (
         <div className="space-y-3">
-          {posts.map((post) => (
+          {filteredPosts.map((post) => (
             <Card key={post.id} className="hover:border-primary/30 transition-colors">
               <CardContent className="py-4">
                 <div className="flex items-start justify-between gap-4">
@@ -257,6 +311,11 @@ export default function AdminPosts() {
                         {CONTENT_TYPE_LABELS[post.contentType as keyof typeof CONTENT_TYPE_LABELS]}
                       </Badge>
                       {post.aiGenerated && <Badge className="text-xs bg-primary/20 text-primary border-primary/30">AI</Badge>}
+                      {!post.imageUrl && (
+                        <Badge variant="outline" className="text-xs text-yellow-500 border-yellow-500/30 bg-yellow-500/5">
+                          <ImageOff className="h-3 w-3 mr-1" /> No Image
+                        </Badge>
+                      )}
                     </div>
                     <p className="text-sm leading-relaxed line-clamp-2">{post.content}</p>
                     <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
@@ -276,6 +335,9 @@ export default function AdminPosts() {
                         <img src={post.imageUrl} alt="" className="h-full w-full object-cover" />
                       </div>
                     )}
+                    <Button variant="ghost" size="icon" className="h-8 w-8" title="Preview" onClick={() => setPreviewPost(post)}>
+                      <Eye className="h-3.5 w-3.5" />
+                    </Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(post)}>
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>
@@ -294,11 +356,19 @@ export default function AdminPosts() {
         <Card>
           <CardContent className="py-12 text-center">
             <FileText className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
-            <h3 className="text-lg font-semibold mb-1">No posts found</h3>
-            <p className="text-sm text-muted-foreground mb-4">Create your first post or generate one with AI</p>
-            <Button onClick={() => { resetForm(); setCreateOpen(true); }} className="gap-2">
-              <Plus className="h-4 w-4" /> Create Post
-            </Button>
+            <h3 className="text-lg font-semibold mb-1">
+              {needsImageOnly ? "All posts have images" : "No posts found"}
+            </h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              {needsImageOnly
+                ? "Every post in this view already has an image attached."
+                : "Create your first post or generate one with AI"}
+            </p>
+            {!needsImageOnly && (
+              <Button onClick={() => { resetForm(); setCreateOpen(true); }} className="gap-2">
+                <Plus className="h-4 w-4" /> Create Post
+              </Button>
+            )}
           </CardContent>
         </Card>
       )}

@@ -1,0 +1,1 @@
+ALTER TABLE `dm_conversations` MODIFY COLUMN `collectedData` json;

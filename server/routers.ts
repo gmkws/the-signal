@@ -1498,8 +1498,78 @@ const userRouter = router({
   }),
 });
 
-// ── Main App Router ────────────────────────────────────────────────────────
+/// ── Leads Router ─────────────────────────────────────────────────────────
+const leadsRouter = router({
+  list: protectedProcedure
+    .input(z.object({ brandId: z.number().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      if (ctx.user.role === "admin") {
+        if (input?.brandId) return db.getLeadsByBrand(input.brandId);
+        return db.getAllLeads();
+      }
+      // Client: only their own brands
+      const brands = await db.getBrandsByClientUserId(ctx.user.id);
+      const brandIds = brands.map(b => b.id);
+      if (input?.brandId && !brandIds.includes(input.brandId)) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      const targetBrandId = input?.brandId ?? brandIds[0];
+      if (!targetBrandId) return [];
+      return db.getLeadsByBrand(targetBrandId);
+    }),
 
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      status: z.enum(["new", "contacted", "qualified", "closed", "spam"]).optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const lead = await db.getLeadById(input.id);
+      if (!lead) throw new TRPCError({ code: "NOT_FOUND" });
+      // Verify access
+      if (ctx.user.role !== "admin") {
+        const brands = await db.getBrandsByClientUserId(ctx.user.id);
+        if (!brands.find(b => b.id === lead.brandId)) throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      await db.updateLead(input.id, {
+        ...(input.status && { status: input.status }),
+        ...(input.notes !== undefined && { notes: input.notes }),
+      });
+      return { success: true };
+    }),
+
+  getChatbotFlow: protectedProcedure
+    .input(z.object({ brandId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin") {
+        const brands = await db.getBrandsByClientUserId(ctx.user.id);
+        if (!brands.find(b => b.id === input.brandId)) throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      return db.getChatbotFlow(input.brandId);
+    }),
+
+  saveChatbotFlow: protectedProcedure
+    .input(z.object({
+      brandId: z.number(),
+      greeting: z.string().min(1).optional(),
+      askName: z.string().min(1).optional(),
+      askContact: z.string().min(1).optional(),
+      askTime: z.string().min(1).optional(),
+      closingMessage: z.string().min(1).optional(),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin") {
+        const brands = await db.getBrandsByClientUserId(ctx.user.id);
+        if (!brands.find(b => b.id === input.brandId)) throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      const { brandId, ...rest } = input;
+      return db.upsertChatbotFlow(brandId, rest);
+    }),
+});
+
+// ── Main App Router ────────────────────────────────────────────────────────
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -1522,6 +1592,7 @@ export const appRouter = router({
   event: eventRouter,
   health: systemHealthRouter,
   onboarding: onboardingRouter,
+  leads: leadsRouter,
 });
 
 export type AppRouter = typeof appRouter;

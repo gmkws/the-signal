@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Zap, Sparkles, Image as ImageIcon, Copy, Check, Save, Loader2, ShoppingBag, Wrench, Info, Layers, Type, RefreshCw, Lightbulb, CalendarDays, LayoutGrid } from "lucide-react";
 import { useState, useCallback } from "react";
 import FillScheduleModal from "@/components/FillScheduleModal";
+import { PostPreviewPanel } from "@/components/PostPreviewPanel";
 import CarouselBuilder from "@/components/CarouselBuilder";
 import { toast } from "sonner";
 import { CONTENT_TYPE_LABELS } from "@shared/types";
@@ -545,6 +546,19 @@ export default function AdminAI() {
                     </TabsContent>
                   </Tabs>
                 </div>
+                {/* Post Preview Panel — shown when content exists */}
+                {generatedContent && (
+                  <div className="border-t border-border pt-4 space-y-2">
+                    <Label className="flex items-center gap-2 text-sm">
+                      <Sparkles className="h-4 w-4 text-primary" /> Post Preview
+                    </Label>
+                    <PostPreviewPanel
+                      content={generatedContent}
+                      imageUrl={smartImageUrl || generatedImageUrl || undefined}
+                      brandName={brands?.find(b => b.id.toString() === selectedBrand)?.name}
+                    />
+                  </div>
+                )}
               </>
             ) : (
               <div className="text-center py-12 text-muted-foreground">

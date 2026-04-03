@@ -35,6 +35,7 @@ import ClientWelcome from "./pages/client/Welcome";
 import Home from "./pages/Home";
 import Onboarding from "./pages/Onboarding";
 import AdminOnboardingApproval from "./pages/admin/OnboardingApproval";
+import AdminLeads from "./pages/admin/Leads";
 
 /** Route guard: redirects non-admin users away from /admin/* routes */
 function AdminGuard({ children }: { children: React.ReactNode }) {
@@ -130,8 +131,10 @@ function AuthRouter() {
         <Route path="/admin/onboarding">
           <AdminGuard><AdminOnboardingApproval /></AdminGuard>
         </Route>
-
-        {/* Client routes — guarded */}
+        <Route path="/admin/leads">
+          <AdminGuard><AdminLeads /></AdminGuard>
+        </Route>
+        {/* Client routess — guarded */}
         <Route path="/client">
           <ClientGuard><ClientDashboard /></ClientGuard>
         </Route>
@@ -152,6 +155,9 @@ function AuthRouter() {
         </Route>
         <Route path="/client/welcome">
           <ClientGuard><ClientWelcome /></ClientGuard>
+        </Route>
+        <Route path="/client/leads">
+          <ClientGuard><AdminLeads /></ClientGuard>
         </Route>
 
         {/* Root redirect based on role */}

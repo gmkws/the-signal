@@ -195,3 +195,38 @@
 - [x] Instagram carousel: 3-step API (slide containers → carousel container → publish)
 - [x] Facebook carousel: child_attachments array
 - [x] generateCarousel + saveCarousel tRPC procedures
+
+## DM Chatbot Lead Generation System
+- [x] Database: leads, dm_conversations, chatbot_flows tables created
+- [x] pnpm db:push migration (0007 + 0008 applied)
+- [x] DB helpers: createLead, getLeadsByBrand, updateLead, upsertConversation, getConversation, getChatbotFlow
+- [x] Meta webhook endpoint: GET /api/webhooks/meta (verification challenge)
+- [x] Meta webhook endpoint: POST /api/webhooks/meta (receive DM events)
+- [x] Webhook signature verification (X-Hub-Signature-256)
+- [x] Chatbot state machine: greeting → ask_service → ask_contact → ask_time → closing
+- [x] Meta send-message API: reply via Instagram DM and Facebook Messenger
+- [x] Brand voice integration: greetings and messages use brand voice settings
+- [x] Lead capture: save to leads table when conversation completes
+- [x] Email notification to admin/client when lead is captured
+- [x] tRPC routers: leads CRUD, chatbot flow config CRUD
+- [x] Admin Leads page: table of all leads with status, filter by brand/platform/status
+- [x] Client Leads page: view their own leads
+- [x] Chatbot Flow Config UI: per-brand greeting, service list, closing message editor
+- [x] Leads nav item in sidebar (admin + client)
+- [x] WEBHOOK_VERIFY_TOKEN env var for Meta webhook setup
+
+## Post Preview Panel
+- [x] PostPreviewPanel component: side-by-side Facebook and Instagram mockup frames
+- [x] Character count display (Facebook: 63,206 limit, Instagram: 2,200 limit)
+- [x] Hashtag formatting: highlighted in preview, count with IG limit warning
+- [x] Carousel preview: swipeable frame-by-frame with dot indicators
+- [x] Available on AI Engine page (after generation, before save)
+- [x] Available on Posts page via Eye button → preview dialog
+- [x] Toggle between Facebook and Instagram preview tabs
+
+## Posts Needing Images Filter
+- [x] "Needs Image" filter button with count badge on Posts page
+- [x] Filter logic: toggles to show only posts where imageUrl is null/empty
+- [x] Visual "No Image" badge (yellow) on each post card that lacks an image
+- [x] Count badge on filter button showing total posts needing images
+- [x] Empty state message when all posts have images

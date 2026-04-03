@@ -15,6 +15,9 @@ import {
   errorLogs, InsertErrorLog,
   onboardingState, InsertOnboardingState, OnboardingState,
   brandInvites, InsertBrandInvite, BrandInvite,
+  leads, InsertLead, Lead,
+  dmConversations, InsertDmConversation, DmConversation,
+  chatbotFlows, InsertChatbotFlow, ChatbotFlow,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -756,3 +759,124 @@ export async function getInvitesByCreator(createdBy: number) {
     .where(eq(brandInvites.createdBy, createdBy))
     .orderBy(desc(brandInvites.createdAt));
 }
+
+// ── Leads ─────────────────────────────────────────────────────────────────
+export async function createLead(lead: InsertLead): Promise<Lead> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(leads).values(lead);
+  const created = await db.select().from(leads).where(eq(leads.id, result[0].insertId)).limit(1);
+  return created[0];
+}
+
+export async function getLeadsByBrand(brandId: number): Promise<Lead[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(leads)
+    .where(eq(leads.brandId, brandId))
+    .orderBy(desc(leads.createdAt));
+}
+
+export async function getAllLeads(): Promise<Lead[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(leads).orderBy(desc(leads.createdAt));
+}
+
+export async function updateLead(id: number, data: Partial<InsertLead>): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(leads).set({ ...data, updatedAt: new Date() }).where(eq(leads.id, id));
+}
+
+export async function getLeadById(id: number): Promise<Lead | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(leads).where(eq(leads.id, id)).limit(1);
+  return result[0];
+}
+
+// ── DM Conversations ──────────────────────────────────────────────────────
+export async function getConversation(brandId: number, senderId: string, platform: string): Promise<DmConversation | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(dmConversations)
+    .where(and(
+      eq(dmConversations.brandId, brandId),
+      eq(dmConversations.senderId, senderId),
+      eq(dmConversations.platform, platform as "instagram" | "facebook")
+    ))
+    .limit(1);
+  return result[0];
+}
+
+export async function upsertConversation(data: {
+  brandId: number;
+  senderId: string;
+  platform: "instagram" | "facebook";
+  state: string;
+  collectedData?: Record<string, string>;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await getConversation(data.brandId, data.senderId, data.platform);
+  if (existing) {
+    await db.update(dmConversations).set({
+      state: data.state,
+      collectedData: data.collectedData ?? existing.collectedData,
+      lastMessageAt: new Date(),
+    }).where(eq(dmConversations.id, existing.id));
+  } else {
+    await db.insert(dmConversations).values({
+      brandId: data.brandId,
+      senderId: data.senderId,
+      platform: data.platform,
+      state: data.state,
+      collectedData: data.collectedData ?? {},
+      lastMessageAt: new Date(),
+    });
+  }
+}
+
+// ── Chatbot Flows ─────────────────────────────────────────────────────────
+const DEFAULT_FLOW = {
+  greeting: "Hey! Thanks for reaching out. What service are you interested in?",
+  askName: "Great! What's your name?",
+  askContact: "What's the best way to reach you? (phone number or email)",
+  askTime: "What time works best for a quick call or follow-up?",
+  closingMessage: "Got it! Someone from the team will be in touch within 24 hours. We appreciate you reaching out!",
+  isActive: true,
+};
+
+export async function getChatbotFlow(brandId: number): Promise<ChatbotFlow | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(chatbotFlows).where(eq(chatbotFlows.brandId, brandId)).limit(1);
+  return result[0] ?? null;
+}
+
+export async function upsertChatbotFlow(brandId: number, data: Partial<InsertChatbotFlow>): Promise<ChatbotFlow> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await getChatbotFlow(brandId);
+  if (existing) {
+    await db.update(chatbotFlows).set({ ...data, updatedAt: new Date() }).where(eq(chatbotFlows.brandId, brandId));
+    const updated = await getChatbotFlow(brandId);
+    return updated!;
+  } else {
+    const toInsert: InsertChatbotFlow = {
+      brandId,
+      greeting: data.greeting ?? DEFAULT_FLOW.greeting,
+      askName: data.askName ?? DEFAULT_FLOW.askName,
+      askContact: data.askContact ?? DEFAULT_FLOW.askContact,
+      askTime: data.askTime ?? DEFAULT_FLOW.askTime,
+      closingMessage: data.closingMessage ?? DEFAULT_FLOW.closingMessage,
+      isActive: data.isActive ?? true,
+    };
+    const result = await db.insert(chatbotFlows).values(toInsert);
+    const created = await db.select().from(chatbotFlows).where(eq(chatbotFlows.id, result[0].insertId)).limit(1);
+    return created[0];
+  }
+}
+
+export { DEFAULT_FLOW as DEFAULT_CHATBOT_FLOW };

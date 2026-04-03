@@ -389,3 +389,64 @@ export const brandInvites = mysqlTable("brand_invites", {
 
 export type BrandInvite = typeof brandInvites.$inferSelect;
 export type InsertBrandInvite = typeof brandInvites.$inferInsert;
+
+// ── DM Chatbot Lead Generation ─────────────────────────────────────────────
+
+export const leads = mysqlTable("leads", {
+  id: int("id").autoincrement().primaryKey(),
+  brandId: int("brandId").notNull(),
+  platform: mysqlEnum("platform", ["instagram", "facebook"]).notNull(),
+  senderId: varchar("senderId", { length: 128 }).notNull(),
+  // Collected during chatbot conversation
+  name: varchar("name", { length: 200 }),
+  email: varchar("email", { length: 320 }),
+  phone: varchar("phone", { length: 30 }),
+  serviceNeeded: text("serviceNeeded"),
+  preferredTime: varchar("preferredTime", { length: 200 }),
+  // Lead lifecycle
+  status: mysqlEnum("status", ["new", "contacted", "qualified", "closed", "spam"]).default("new").notNull(),
+  notes: text("notes"),
+  // Raw conversation context
+  conversationId: varchar("conversationId", { length: 128 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type Lead = typeof leads.$inferSelect;
+export type InsertLead = typeof leads.$inferInsert;
+
+export const dmConversations = mysqlTable("dm_conversations", {
+  id: int("id").autoincrement().primaryKey(),
+  brandId: int("brandId").notNull(),
+  senderId: varchar("senderId", { length: 128 }).notNull(),
+  platform: mysqlEnum("platform", ["instagram", "facebook"]).notNull(),
+  // State machine: greeting | ask_service | ask_contact | ask_time | closing | complete | opted_out
+  state: varchar("state", { length: 50 }).default("greeting").notNull(),
+  // Partial data collected so far
+  collectedData: json("collectedData").$type<{
+    name?: string;
+    service?: string;
+    contact?: string;
+    preferredTime?: string;
+  }>(),
+  lastMessageAt: timestamp("lastMessageAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type DmConversation = typeof dmConversations.$inferSelect;
+export type InsertDmConversation = typeof dmConversations.$inferInsert;
+
+export const chatbotFlows = mysqlTable("chatbot_flows", {
+  id: int("id").autoincrement().primaryKey(),
+  brandId: int("brandId").notNull().unique(),
+  // Customizable messages
+  greeting: text("greeting").notNull(),
+  askName: text("askName").notNull(),
+  askContact: text("askContact").notNull(),
+  askTime: text("askTime").notNull(),
+  closingMessage: text("closingMessage").notNull(),
+  // Whether chatbot is active for this brand
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type ChatbotFlow = typeof chatbotFlows.$inferSelect;
+export type InsertChatbotFlow = typeof chatbotFlows.$inferInsert;

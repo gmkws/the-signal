@@ -50,6 +50,20 @@
       "when": 1775232016457,
       "tag": "0006_smiling_bill_hollister",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1775233838038,
+      "tag": "0007_military_thaddeus_ross",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1775234007051,
+      "tag": "0008_worthless_butterfly",
+      "breakpoints": true
     }
   ]
 }
