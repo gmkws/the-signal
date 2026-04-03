@@ -7,8 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Zap, Sparkles, Image as ImageIcon, Copy, Save, Loader2, ShoppingBag, Wrench, Info, Layers, Type, CalendarDays } from "lucide-react";
-import { useState } from "react";
+import { Zap, Sparkles, Image as ImageIcon, Copy, Check, Save, Loader2, ShoppingBag, Wrench, Info, Layers, Type, RefreshCw, Lightbulb } from "lucide-react";
+import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { CONTENT_TYPE_LABELS } from "@shared/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -20,6 +20,8 @@ export default function AdminAI() {
   const [selectedBrand, setSelectedBrand] = useState<string>("");
   const [contentType, setContentType] = useState<string>("hey_tony");
   const [customTopic, setCustomTopic] = useState("");
+  // Hey Tony-specific topic override
+  const [heyTonyTopic, setHeyTonyTopic] = useState("");
   const [useContentSources, setUseContentSources] = useState(true);
   const [generatedContent, setGeneratedContent] = useState("");
   const [generatedContentType, setGeneratedContentType] = useState("");
@@ -30,6 +32,8 @@ export default function AdminAI() {
   const [overlayCta, setOverlayCta] = useState("");
   const [overlayHashtags, setOverlayHashtags] = useState("");
   const [imageMode, setImageMode] = useState<"ai" | "smart">("smart");
+  // Copy-to-clipboard feedback state
+  const [copied, setCopied] = useState(false);
 
   const brandId = selectedBrand ? parseInt(selectedBrand) : undefined;
 
@@ -80,12 +84,29 @@ export default function AdminAI() {
     onError: (e) => toast.error(e.message),
   });
 
+  // Resolve the effective topic: Hey Tony uses its own field, others use customTopic
+  const effectiveTopic = useCallback(() => {
+    if (contentType === "hey_tony" && heyTonyTopic.trim()) return heyTonyTopic.trim();
+    return customTopic.trim() || undefined;
+  }, [contentType, heyTonyTopic, customTopic]);
+
   const handleGenerate = () => {
     if (!selectedBrand) { toast.error("Select a brand first"); return; }
     generatePost.mutate({
       brandId: parseInt(selectedBrand),
       contentType: contentType as any,
-      customTopic: customTopic || undefined,
+      customTopic: effectiveTopic(),
+      useContentSources,
+    });
+  };
+
+  // Regenerate: same settings, no form reset — just fires the mutation again
+  const handleRegenerate = () => {
+    if (!selectedBrand) return;
+    generatePost.mutate({
+      brandId: parseInt(selectedBrand),
+      contentType: (generatedContentType || contentType) as any,
+      customTopic: effectiveTopic(),
       useContentSources,
     });
   };
@@ -125,14 +146,29 @@ export default function AdminAI() {
     });
   };
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(generatedContent);
-    toast.success("Copied to clipboard");
+  const copyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(generatedContent);
+      setCopied(true);
+      toast.success("Copied to clipboard!");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback for older browsers
+      const el = document.createElement("textarea");
+      el.value = generatedContent;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+      setCopied(true);
+      toast.success("Copied to clipboard!");
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   const contentTypeDescription = (ct: string) => {
     switch (ct) {
-      case "hey_tony": return "Value-first tips — SEO fixes, AI tips, website mistakes";
+      case "hey_tony": return "Value-first tips — website, AI, branding, local business";
       case "hook_solve": return "Problem → Solution format with visual hooks";
       case "auditor_showcase": return "Before/after site audit showcases";
       case "local_tips": return "Hillsboro/Washington County business tips";
@@ -214,9 +250,7 @@ export default function AdminAI() {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {Object.entries(CONTENT_TYPE_LABELS).map(([k, v]) => {
-                    // Only show shopify_product if brand has Shopify
                     if (k === "shopify_product" && !hasShopify) return null;
-                    // Only show service_spotlight if brand has services
                     if (k === "service_spotlight" && !hasServices) return null;
                     return <SelectItem key={k} value={k}>{v}</SelectItem>;
                   })}
@@ -227,14 +261,37 @@ export default function AdminAI() {
               </p>
             </div>
 
-            <div className="space-y-2">
-              <Label>Custom Topic (optional)</Label>
-              <Input
-                value={customTopic}
-                onChange={(e) => setCustomTopic(e.target.value)}
-                placeholder="e.g., Why local businesses need schema markup"
-              />
-            </div>
+            {/* Hey Tony topic override — only shown when Hey Tony is selected */}
+            {contentType === "hey_tony" && (
+              <div className="space-y-2 p-3 rounded-lg border border-primary/20 bg-primary/5">
+                <Label className="text-xs font-medium flex items-center gap-1.5">
+                  <Lightbulb className="h-3.5 w-3.5 text-primary" />
+                  Hey Tony Topic Override
+                  <span className="text-muted-foreground font-normal">(optional)</span>
+                </Label>
+                <Input
+                  value={heyTonyTopic}
+                  onChange={(e) => setHeyTonyTopic(e.target.value)}
+                  placeholder="e.g., Google Business Profile reviews, page speed, AI follow-ups..."
+                  className="text-sm h-9"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Steer the tip toward a specific subject. Leave blank to let the AI pick from its rotation.
+                </p>
+              </div>
+            )}
+
+            {/* General custom topic — shown for all formats except Hey Tony */}
+            {contentType !== "hey_tony" && (
+              <div className="space-y-2">
+                <Label>Custom Topic <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <Input
+                  value={customTopic}
+                  onChange={(e) => setCustomTopic(e.target.value)}
+                  placeholder="e.g., Why local businesses need schema markup"
+                />
+              </div>
+            )}
 
             <Button
               onClick={handleGenerate}
@@ -276,11 +333,45 @@ export default function AdminAI() {
                   <p className="text-xs text-muted-foreground mt-1">{generatedContent.length}/2000 characters — Edit as needed</p>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={copyToClipboard} className="gap-1">
-                    <Copy className="h-3.5 w-3.5" /> Copy
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Copy to clipboard — shows checkmark on success */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={copyToClipboard}
+                    className="gap-1.5 transition-all"
+                    disabled={copied}
+                  >
+                    {copied ? (
+                      <><Check className="h-3.5 w-3.5 text-green-400" /> Copied!</>
+                    ) : (
+                      <><Copy className="h-3.5 w-3.5" /> Copy</>
+                    )}
                   </Button>
-                  <Button variant="outline" size="sm" onClick={handleSaveAsDraft} disabled={createPost.isPending} className="gap-1">
+
+                  {/* Regenerate — same settings, fresh variation */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRegenerate}
+                    disabled={generatePost.isPending}
+                    className="gap-1.5"
+                    title="Get a fresh variation with the same settings"
+                  >
+                    {generatePost.isPending ? (
+                      <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Regenerating...</>
+                    ) : (
+                      <><RefreshCw className="h-3.5 w-3.5" /> Regenerate</>
+                    )}
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSaveAsDraft}
+                    disabled={createPost.isPending}
+                    className="gap-1.5"
+                  >
                     <Save className="h-3.5 w-3.5" /> Save as Draft
                   </Button>
                 </div>

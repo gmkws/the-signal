@@ -172,3 +172,8 @@
 - [x] Seed content type preferences and posting frequency
 - [x] Vitest tests for cron scheduler logic (16 tests, 95 total passing)
 - [x] README updated with cron setup and seed script documentation
+
+## AI Engine UX Improvements
+- [x] Regenerate button on AI Engine page (get fresh variation without clearing form)
+- [x] Hey Tony topic override field (optional text input to steer tip topic)
+- [x] Copy to clipboard button on generated post preview (with checkmark feedback)
