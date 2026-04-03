@@ -5,7 +5,7 @@ import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
-import { generatePost, generatePostImage, pickContentType } from "./services/contentEngine";
+import { generatePost, generatePostImage, pickContentType, generateBatch, buildBatchSlots, generateCarouselPost } from "./services/contentEngine";
 import type { ContentFormat, ContentSourceInfo } from "./services/contentEngine";
 import { MAX_BRANDS } from "@shared/types";
 import { validateShopifyConnection, fetchShopifyProducts, transformShopifyProduct, fetchShopifyCollections } from "./services/shopify";
@@ -437,15 +437,216 @@ const aiRouter = router({
         subtext: input.overlayText?.subtext || "",
         ctaText: input.overlayText?.ctaText || "",
         brandName: input.overlayText?.brandName || brand.name,
-        hashtags: input.overlayText?.hashtags || [],
+          hashtags: input.overlayText?.hashtags || [],
         style: input.style,
         brandLogoUrl: brand.logoUrl || "",
       });
-
       return result;
     }),
-});
 
+  // Preview what slots would be generated (no LLM calls, no DB writes)
+  previewSchedule: protectedProcedure
+    .input(z.object({
+      brandId: z.number(),
+      windowDays: z.number().min(1).max(30).default(7),
+      postsPerDay: z.union([z.literal(1), z.literal(2)]).default(1),
+      firstPostHour: z.number().min(0).max(23).default(9),
+      secondPostHour: z.number().min(0).max(23).default(17),
+      startDate: z.string().optional(), // ISO date string, defaults to tomorrow
+      formatRotation: z.array(z.string()).optional(),
+    }))
+    .query(async ({ ctx, input }) => {
+      const brand = await db.getBrandById(input.brandId);
+      if (!brand) throw new TRPCError({ code: "NOT_FOUND" });
+      if (ctx.user.role !== "admin" && brand.clientUserId !== ctx.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      const startDate = input.startDate ? new Date(input.startDate) : (() => {
+        const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(0,0,0,0); return d;
+      })();
+      const endDate = new Date(startDate);
+      endDate.setDate(endDate.getDate() + input.windowDays);
+      // Get already-scheduled posts in this window
+      const existing = await db.getScheduledPosts(startDate, endDate, input.brandId);
+      const occupiedSlots = new Set<string>();
+      for (const p of existing) {
+        if (p.scheduledAt) {
+          const d = new Date(p.scheduledAt);
+          const key = `${d.toISOString().slice(0,10)}-${String(d.getHours()).padStart(2,"0")}`;
+          occupiedSlots.add(key);
+        }
+      }
+      const defaultRotation: ContentFormat[] = ["hey_tony", "hook_solve", "auditor_showcase", "local_tips", "machine_series", "print_digital"];
+      const rotation = (input.formatRotation?.length ? input.formatRotation : defaultRotation) as ContentFormat[];
+      const slots = buildBatchSlots(
+        startDate,
+        input.windowDays,
+        input.postsPerDay as 1 | 2,
+        input.firstPostHour,
+        input.secondPostHour,
+        occupiedSlots,
+        rotation
+      );
+      return {
+        slots: slots.map(s => ({ scheduledAt: s.scheduledAt, contentType: s.contentType })),
+        existingCount: existing.length,
+        newCount: slots.length,
+      };
+    }),
+
+  // Actually generate and save the batch
+  fillSchedule: protectedProcedure
+    .input(z.object({
+      brandId: z.number(),
+      windowDays: z.number().min(1).max(30).default(7),
+      postsPerDay: z.union([z.literal(1), z.literal(2)]).default(1),
+      firstPostHour: z.number().min(0).max(23).default(9),
+      secondPostHour: z.number().min(0).max(23).default(17),
+      startDate: z.string().optional(),
+      formatRotation: z.array(z.string()).optional(),
+      createAs: z.enum(["draft", "scheduled"]).default("draft"),
+      useContentSources: z.boolean().default(true),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const brand = await db.getBrandById(input.brandId);
+      if (!brand) throw new TRPCError({ code: "NOT_FOUND" });
+      if (ctx.user.role !== "admin" && brand.clientUserId !== ctx.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      const startDate = input.startDate ? new Date(input.startDate) : (() => {
+        const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(0,0,0,0); return d;
+      })();
+      const endDate = new Date(startDate);
+      endDate.setDate(endDate.getDate() + input.windowDays);
+      // Get occupied slots
+      const existing = await db.getScheduledPosts(startDate, endDate, input.brandId);
+      const occupiedSlots = new Set<string>();
+      for (const p of existing) {
+        if (p.scheduledAt) {
+          const d = new Date(p.scheduledAt);
+          const key = `${d.toISOString().slice(0,10)}-${String(d.getHours()).padStart(2,"0")}`;
+          occupiedSlots.add(key);
+        }
+      }
+      const defaultRotation: ContentFormat[] = ["hey_tony", "hook_solve", "auditor_showcase", "local_tips", "machine_series", "print_digital"];
+      const rotation = (input.formatRotation?.length ? input.formatRotation : defaultRotation) as ContentFormat[];
+      const slots = buildBatchSlots(
+        startDate, input.windowDays, input.postsPerDay as 1 | 2,
+        input.firstPostHour, input.secondPostHour, occupiedSlots, rotation
+      );
+      if (slots.length === 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "All slots in this window are already filled" });
+      }
+      // Build source info for content rotation
+      let sourceInfo: ContentSourceInfo | undefined;
+      if (input.useContentSources) {
+        const shopifyConn = await db.getShopifyConnectionByBrandId(input.brandId);
+        const servicesData = await db.getServicesByBrandId(input.brandId);
+        sourceInfo = { hasShopify: !!shopifyConn?.isConnected, hasServices: servicesData.length > 0 };
+        if (sourceInfo.hasShopify) {
+          const product = await db.getShopifyProductForContent(input.brandId);
+          if (product) sourceInfo.shopifyProduct = { title: product.title, description: product.description, price: product.price, compareAtPrice: product.compareAtPrice, productType: product.productType, tags: (product.tags as string[]) || [], imageUrl: product.imageUrl, collections: (product.collections as string[]) || [], handle: product.handle };
+        }
+        if (sourceInfo.hasServices) {
+          const service = await db.getServiceForContent(input.brandId);
+          if (service) sourceInfo.service = { name: service.name, description: service.description, serviceAreas: (service.serviceAreas as string[]) || [], specials: service.specials, ctaType: service.ctaType, ctaText: service.ctaText, ctaLink: service.ctaLink, ctaPhone: service.ctaPhone, images: (service.images as string[]) || [] };
+        }
+      }
+      // Generate all posts
+      const generated = await generateBatch(brand.name, slots, brand.voiceSettings as any, sourceInfo);
+      // Save to DB
+      const saved: number[] = [];
+      for (const post of generated) {
+        const created = await db.createPost({
+          brandId: input.brandId,
+          content: post.content,
+          contentType: post.contentType as any,
+          scheduledAt: post.scheduledAt,
+          status: input.createAs,
+          platforms: ["facebook", "instagram"],
+          aiGenerated: true,
+          createdBy: ctx.user.id,
+        });
+        saved.push(created.id);
+      }
+      return { created: saved.length, posts: saved };
+    }),
+
+  // Generate a carousel post (multi-slide)
+  generateCarousel: protectedProcedure
+    .input(z.object({
+      brandId: z.number(),
+      carouselType: z.enum(["hook_solve", "local_tips", "machine_series", "service_spotlight", "custom"]).default("hook_solve"),
+      customTopic: z.string().optional(),
+      useContentSources: z.boolean().default(true),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const brand = await db.getBrandById(input.brandId);
+      if (!brand) throw new TRPCError({ code: "NOT_FOUND" });
+      if (ctx.user.role !== "admin" && brand.clientUserId !== ctx.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      let sourceInfo: ContentSourceInfo | undefined;
+      if (input.useContentSources) {
+        const servicesData = await db.getServicesByBrandId(input.brandId);
+        if (servicesData.length > 0) {
+          const service = await db.getServiceForContent(input.brandId);
+          if (service) {
+            sourceInfo = {
+              hasShopify: false,
+              hasServices: true,
+              service: { name: service.name, description: service.description, serviceAreas: (service.serviceAreas as string[]) || [], specials: service.specials, ctaType: service.ctaType, ctaText: service.ctaText, ctaLink: service.ctaLink, ctaPhone: service.ctaPhone, images: (service.images as string[]) || [] },
+            };
+          }
+        }
+      }
+      const result = await generateCarouselPost(
+        brand.name,
+        input.carouselType,
+        brand.voiceSettings as any,
+        input.customTopic,
+        sourceInfo
+      );
+      return result;
+    }),
+
+  // Save a carousel post to the database
+  saveCarousel: protectedProcedure
+    .input(z.object({
+      brandId: z.number(),
+      captionText: z.string(),
+      contentType: z.string(),
+      slides: z.array(z.object({
+        headline: z.string(),
+        body: z.string(),
+        imagePrompt: z.string(),
+        imageUrl: z.string().optional(),
+      })),
+      scheduledAt: z.string().optional(),
+      status: z.enum(["draft", "scheduled", "pending_review"]).default("draft"),
+      platforms: z.array(z.string()).default(["facebook", "instagram"]),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const brand = await db.getBrandById(input.brandId);
+      if (!brand) throw new TRPCError({ code: "NOT_FOUND" });
+      if (ctx.user.role !== "admin" && brand.clientUserId !== ctx.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      const post = await db.createPost({
+        brandId: input.brandId,
+        content: input.captionText,
+        contentType: input.contentType as any,
+        isCarousel: true,
+        carouselSlides: input.slides,
+        scheduledAt: input.scheduledAt ? new Date(input.scheduledAt) : undefined,
+        status: input.status,
+        platforms: input.platforms,
+        aiGenerated: true,
+        createdBy: ctx.user.id,
+      });
+      return { id: post.id };
+    }),
+});
 // ── Notification Router ────────────────────────────────────────────────────
 
 const notificationRouter = router({

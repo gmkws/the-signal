@@ -177,3 +177,21 @@
 - [x] Regenerate button on AI Engine page (get fresh variation without clearing form)
 - [x] Hey Tony topic override field (optional text input to steer tip topic)
 - [x] Copy to clipboard button on generated post preview (with checkmark feedback)
+
+## Fill Schedule (Batch Content Queue Generator)
+- [x] Server procedure: ai.fillSchedule — accepts brandId, windowDays (7/15/30), postsPerDay (1/2), startTime, secondPostTime, formatRotation, startDate, createAs (draft/scheduled)
+- [x] Content engine: generateBatch() — cycles through format rotation, skips days already covered, returns array of {content, contentType, scheduledAt, imagePrompt}
+- [x] Skip logic: query existing scheduled/draft posts in window, avoid double-posting same day/time slot
+- [x] Fill Schedule UI — FillScheduleModal on AI Engine page with preview before confirming
+- [x] Show generated post count and date range in confirmation toast
+
+## Carousel Post Support
+- [x] Schema: add isCarousel boolean, carouselSlides JSON field to posts table
+- [x] Run pnpm db:push to migrate (0006_smiling_bill_hollister.sql)
+- [x] Content engine: generateCarouselPost() — returns 4-6 slides [{headline, body, imagePrompt}]
+- [x] AI Engine UI: carousel slide builder — add/remove/reorder slides, per-slide copy editor, per-slide image generation
+- [x] Carousel tab on AI Engine page (Single Post / Carousel tabs)
+- [x] Cron publisher: detect isCarousel, route to carousel publishers
+- [x] Instagram carousel: 3-step API (slide containers → carousel container → publish)
+- [x] Facebook carousel: child_attachments array
+- [x] generateCarousel + saveCarousel tRPC procedures

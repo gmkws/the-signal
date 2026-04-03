@@ -187,3 +187,95 @@ export async function getFacebookPostInsights(
   }
   return metrics;
 }
+
+// ── Carousel Publishing ────────────────────────────────────────────────────
+
+export interface CarouselSlideInput {
+  imageUrl: string;
+  caption?: string;
+}
+
+/**
+ * Publish a carousel post to Instagram Business Account.
+ * Three-step: 1) create slide containers 2) create carousel container 3) publish
+ */
+export async function publishCarouselToInstagram(
+  instagramAccountId: string,
+  accessToken: string,
+  caption: string,
+  slides: CarouselSlideInput[]
+): Promise<{ id: string }> {
+  if (slides.length < 2) throw new Error("Instagram carousels require at least 2 slides");
+  if (slides.length > 10) throw new Error("Instagram carousels support a maximum of 10 slides");
+
+  // Step 1: Create individual media containers
+  const childContainerIds: string[] = [];
+  for (const slide of slides) {
+    const containerResponse = await fetch(`${GRAPH_API_BASE}/${instagramAccountId}/media`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image_url: slide.imageUrl, is_carousel_item: true, access_token: accessToken }),
+    });
+    if (!containerResponse.ok) {
+      const error = await containerResponse.json().catch(() => ({}));
+      throw new Error(`Instagram carousel slide container failed: ${JSON.stringify(error)}`);
+    }
+    const container = await containerResponse.json();
+    childContainerIds.push(container.id);
+  }
+
+  // Step 2: Create carousel container
+  const carouselResponse = await fetch(`${GRAPH_API_BASE}/${instagramAccountId}/media`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ media_type: "CAROUSEL", children: childContainerIds.join(","), caption, access_token: accessToken }),
+  });
+  if (!carouselResponse.ok) {
+    const error = await carouselResponse.json().catch(() => ({}));
+    throw new Error(`Instagram carousel container creation failed: ${JSON.stringify(error)}`);
+  }
+  const carouselContainer = await carouselResponse.json();
+
+  // Step 3: Publish
+  const publishResponse = await fetch(`${GRAPH_API_BASE}/${instagramAccountId}/media_publish`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ creation_id: carouselContainer.id, access_token: accessToken }),
+  });
+  if (!publishResponse.ok) {
+    const error = await publishResponse.json().catch(() => ({}));
+    throw new Error(`Instagram carousel publish failed: ${JSON.stringify(error)}`);
+  }
+  return publishResponse.json();
+}
+
+/**
+ * Publish a carousel post to a Facebook Page using child_attachments.
+ */
+export async function publishCarouselToFacebook(
+  pageId: string,
+  pageAccessToken: string,
+  message: string,
+  slides: CarouselSlideInput[]
+): Promise<{ id: string }> {
+  if (slides.length < 2) throw new Error("Facebook carousels require at least 2 slides");
+
+  const response = await fetch(`${GRAPH_API_BASE}/${pageId}/feed`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message,
+      access_token: pageAccessToken,
+      child_attachments: slides.slice(0, 10).map((slide) => ({
+        link: `https://www.facebook.com/${pageId}`,
+        picture: slide.imageUrl,
+        description: slide.caption || "",
+      })),
+    }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(`Facebook carousel publish failed: ${JSON.stringify(error)}`);
+  }
+  return response.json();
+}

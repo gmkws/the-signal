@@ -7,8 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Zap, Sparkles, Image as ImageIcon, Copy, Check, Save, Loader2, ShoppingBag, Wrench, Info, Layers, Type, RefreshCw, Lightbulb } from "lucide-react";
+import { Zap, Sparkles, Image as ImageIcon, Copy, Check, Save, Loader2, ShoppingBag, Wrench, Info, Layers, Type, RefreshCw, Lightbulb, CalendarDays, LayoutGrid } from "lucide-react";
 import { useState, useCallback } from "react";
+import FillScheduleModal from "@/components/FillScheduleModal";
+import CarouselBuilder from "@/components/CarouselBuilder";
 import { toast } from "sonner";
 import { CONTENT_TYPE_LABELS } from "@shared/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -34,6 +36,8 @@ export default function AdminAI() {
   const [imageMode, setImageMode] = useState<"ai" | "smart">("smart");
   // Copy-to-clipboard feedback state
   const [copied, setCopied] = useState(false);
+  // Fill Schedule modal
+  const [fillScheduleOpen, setFillScheduleOpen] = useState(false);
 
   const brandId = selectedBrand ? parseInt(selectedBrand) : undefined;
 
@@ -183,14 +187,64 @@ export default function AdminAI() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-          <Zap className="h-6 w-6 text-primary" />
-          AI Content Engine
-        </h1>
-        <p className="text-muted-foreground">Generate social media content in your brand's voice</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+            <Zap className="h-6 w-6 text-primary" />
+            AI Content Engine
+          </h1>
+          <p className="text-muted-foreground">Generate social media content in your brand's voice</p>
+        </div>
+        <Button
+          variant="outline"
+          className="gap-2 shrink-0"
+          onClick={() => setFillScheduleOpen(true)}
+          disabled={!selectedBrand}
+          title={!selectedBrand ? "Select a brand first" : "Generate a full content queue"}
+        >
+          <CalendarDays className="h-4 w-4" />
+          Fill Schedule
+        </Button>
       </div>
 
+      {/* Fill Schedule Modal */}
+      {selectedBrand && (
+        <FillScheduleModal
+          open={fillScheduleOpen}
+          onClose={() => setFillScheduleOpen(false)}
+          brandId={parseInt(selectedBrand)}
+          brandName={brands?.find(b => b.id === parseInt(selectedBrand))?.name ?? ""}
+        />
+      )}
+
+      {/* Mode Tabs: Single Post vs Carousel */}
+      <Tabs defaultValue="single" className="w-full">
+        <TabsList className="mb-4">
+          <TabsTrigger value="single" className="gap-2">
+            <Type className="h-4 w-4" />
+            Single Post
+          </TabsTrigger>
+          <TabsTrigger value="carousel" className="gap-2" disabled={!selectedBrand}>
+            <LayoutGrid className="h-4 w-4" />
+            Carousel
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="carousel">
+          {selectedBrand ? (
+            <CarouselBuilder
+              brandId={parseInt(selectedBrand)}
+              brandName={brands?.find(b => b.id === parseInt(selectedBrand))?.name ?? ""}
+            />
+          ) : (
+            <div className="text-center py-16 text-muted-foreground">
+              <LayoutGrid className="h-12 w-12 mx-auto mb-4 opacity-30" />
+              <p className="text-sm">Select a brand above to build carousel posts</p>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="single">
       <div className="grid md:grid-cols-2 gap-6">
         {/* Input Panel */}
         <Card>
@@ -507,6 +561,8 @@ export default function AdminAI() {
           </CardContent>
         </Card>
       </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

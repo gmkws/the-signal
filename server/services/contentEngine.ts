@@ -290,3 +290,268 @@ export async function generatePostImage(prompt: string): Promise<string> {
   if (!result.url) throw new Error("Image generation returned no URL");
   return result.url;
 }
+
+// ── Batch Generation for Fill Schedule ────────────────────────────────────
+
+export interface BatchSlot {
+  scheduledAt: Date;
+  contentType: ContentFormat;
+}
+
+export interface BatchGeneratedPost {
+  content: string;
+  contentType: ContentFormat;
+  scheduledAt: Date;
+  suggestedImagePrompt: string;
+}
+
+/**
+ * Build a list of time slots for batch generation, skipping dates that already
+ * have posts scheduled (based on the occupiedDates set — ISO date strings "YYYY-MM-DD").
+ */
+export function buildBatchSlots(
+  startDate: Date,
+  windowDays: number,
+  postsPerDay: 1 | 2,
+  firstPostHour: number,   // e.g. 9 for 9:00 AM
+  secondPostHour: number,  // e.g. 17 for 5:00 PM — only used when postsPerDay === 2
+  occupiedSlots: Set<string>, // "YYYY-MM-DD-HH" strings of already-scheduled slots
+  formatRotation: ContentFormat[]
+): BatchSlot[] {
+  const slots: BatchSlot[] = [];
+  let formatIndex = 0;
+
+  for (let day = 0; day < windowDays; day++) {
+    const date = new Date(startDate);
+    date.setDate(date.getDate() + day);
+    const dateStr = date.toISOString().slice(0, 10); // YYYY-MM-DD
+
+    const timesToPost: number[] = [firstPostHour];
+    if (postsPerDay === 2) timesToPost.push(secondPostHour);
+
+    for (const hour of timesToPost) {
+      const slotKey = `${dateStr}-${String(hour).padStart(2, "0")}`;
+      if (occupiedSlots.has(slotKey)) continue; // skip already-filled slots
+
+      const scheduledAt = new Date(date);
+      scheduledAt.setHours(hour, 0, 0, 0);
+
+      const contentType = formatRotation[formatIndex % formatRotation.length];
+      formatIndex++;
+
+      slots.push({ scheduledAt, contentType });
+    }
+  }
+
+  return slots;
+}
+
+/**
+ * Generate a batch of posts for the Fill Schedule feature.
+ * Generates posts sequentially to avoid rate limiting.
+ */
+export async function generateBatch(
+  brandName: string,
+  slots: BatchSlot[],
+  voiceSettings?: BrandVoice | null,
+  sourceInfo?: ContentSourceInfo
+): Promise<BatchGeneratedPost[]> {
+  const results: BatchGeneratedPost[] = [];
+
+  for (const slot of slots) {
+    try {
+      // For service_spotlight and shopify_product, use the sourceInfo rotation
+      const effectiveSourceInfo = (slot.contentType === "service_spotlight" || slot.contentType === "shopify_product")
+        ? sourceInfo
+        : undefined;
+
+      const generated = await generatePost(
+        brandName,
+        slot.contentType,
+        voiceSettings,
+        undefined,
+        effectiveSourceInfo
+      );
+
+      results.push({
+        content: generated.content,
+        contentType: generated.contentType,
+        scheduledAt: slot.scheduledAt,
+        suggestedImagePrompt: generated.suggestedImagePrompt,
+      });
+    } catch (err) {
+      console.error(`[BatchGenerate] Failed for slot ${slot.scheduledAt.toISOString()}:`, err);
+      // Push a placeholder so the caller knows this slot failed
+      results.push({
+        content: `[Generation failed for this slot — please regenerate manually]`,
+        contentType: slot.contentType,
+        scheduledAt: slot.scheduledAt,
+        suggestedImagePrompt: `Professional social media graphic for ${brandName}`,
+      });
+    }
+  }
+
+  return results;
+}
+
+// ── Carousel Post Generator ────────────────────────────────────────────────
+
+export interface CarouselSlide {
+  headline: string;   // Short punchy headline for this slide (max ~8 words)
+  body: string;       // 1-3 sentence body copy for this slide
+  imagePrompt: string; // Detailed image generation prompt for this slide's visual
+  imageUrl?: string;  // Filled in after image generation
+}
+
+export interface GeneratedCarousel {
+  slides: CarouselSlide[];
+  captionText: string;       // The main post caption (goes in the post body)
+  contentType: ContentFormat;
+  suggestedHashtags: string[];
+}
+
+/**
+ * Generate a multi-slide carousel post using the LLM.
+ * Returns 3-7 slides, each with headline, body, and image prompt.
+ */
+export async function generateCarouselPost(
+  brandName: string,
+  carouselType: "hook_solve" | "local_tips" | "machine_series" | "service_spotlight" | "custom",
+  voiceSettings?: BrandVoice | null,
+  customTopic?: string,
+  sourceInfo?: ContentSourceInfo
+): Promise<GeneratedCarousel> {
+  const voiceDesc = voiceSettings
+    ? `Tone: ${voiceSettings.tone}. Style: ${voiceSettings.style}. ${voiceSettings.customInstructions || ""}`
+    : "Professional, direct, value-first, no fluff.";
+
+  const avoidWords = voiceSettings?.avoidWords?.length
+    ? `Never use these words/phrases: ${voiceSettings.avoidWords.join(", ")}.`
+    : "";
+
+  const topicHint = customTopic ? `Focus this carousel on: "${customTopic}".` : "";
+
+  const serviceContext = sourceInfo?.service
+    ? `\nService to feature: ${sourceInfo.service.name} — ${sourceInfo.service.description || ""}. Service areas: ${sourceInfo.service.serviceAreas?.join(", ") || ""}.`
+    : "";
+
+  const formatInstructions: Record<string, string> = {
+    hook_solve: `This is a "Hook & Solve" carousel. 
+Slide 1: A bold hook/problem statement that stops the scroll. Start with a relatable pain point or surprising fact.
+Slides 2-5: Each slide solves one part of the problem or reveals one insight/tip. Keep each slide focused on a single idea.
+Slide 6 (optional): A "So what?" or "Key takeaway" summary slide.
+Last slide: A clear, low-friction CTA. Example: "Questions? DM us or call — answers don't cost anything."`,
+
+    local_tips: `This is a "Local Business Tips" carousel for businesses in the service area.
+Slide 1: Hook — a local business challenge or opportunity.
+Slides 2-4: Practical, actionable tips specific to local businesses.
+Slide 5: How ${brandName} helps with this.
+Last slide: CTA.`,
+
+    machine_series: `This is a "Your Website Is a Machine" carousel.
+Slide 1: Hook — most websites are broken machines (or a specific symptom).
+Slides 2-4: What a high-performing website actually does (each slide = one function).
+Slide 5: What to audit or fix first.
+Last slide: CTA — offer a free audit or consultation.`,
+
+    service_spotlight: `This is a "Service Spotlight" carousel.${serviceContext}
+Slide 1: Hook — the problem this service solves.
+Slides 2-4: How the service works, what makes it different, results/outcomes.
+Slide 5: Social proof or specific result.
+Last slide: CTA.`,
+
+    custom: `Create a valuable, educational carousel with 4-6 slides.
+Slide 1: A compelling hook.
+Middle slides: Deliver the value — tips, insights, or a story.
+Last slide: CTA.`,
+  };
+
+  const instructions = formatInstructions[carouselType as string] || formatInstructions.custom;
+
+  const systemPrompt = `You are a social media content strategist for ${brandName}.
+Brand voice: ${voiceDesc}
+${avoidWords}
+${topicHint}
+
+You create carousel posts for Instagram and Facebook. Each slide must be concise, visually distinct, and build on the previous one.
+
+CRITICAL RULES:
+- Each slide headline: max 8 words, punchy, no filler
+- Each slide body: 1-3 sentences max, conversational, no corporate speak
+- Image prompts: describe a professional, brand-appropriate visual — NO text in images, NO stock photo clichés
+- The caption text is what appears BELOW the carousel on the feed — make it engaging and include hashtags at the end
+- Return ONLY valid JSON matching the schema exactly`;
+
+  const userPrompt = `${instructions}
+
+Return a JSON object with this exact structure:
+{
+  "slides": [
+    {
+      "headline": "Short punchy headline",
+      "body": "1-3 sentences of value-packed copy.",
+      "imagePrompt": "Detailed visual description for AI image generation. No text in image."
+    }
+  ],
+  "captionText": "The main post caption that appears below the carousel. Engaging opener + context + hashtags.",
+  "suggestedHashtags": ["hashtag1", "hashtag2", "hashtag3"]
+}
+
+Generate 4-6 slides. Make each slide feel like it earns the swipe.`;
+
+  const response = await invokeLLM({
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: "carousel_post",
+        strict: true,
+        schema: {
+          type: "object",
+          properties: {
+            slides: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  headline: { type: "string" },
+                  body: { type: "string" },
+                  imagePrompt: { type: "string" },
+                },
+                required: ["headline", "body", "imagePrompt"],
+                additionalProperties: false,
+              },
+            },
+            captionText: { type: "string" },
+            suggestedHashtags: {
+              type: "array",
+              items: { type: "string" },
+            },
+          },
+          required: ["slides", "captionText", "suggestedHashtags"],
+          additionalProperties: false,
+        },
+      },
+    },
+  });
+
+  const rawContent = response?.choices?.[0]?.message?.content;
+  if (!rawContent) throw new Error("LLM returned empty response for carousel");
+  const raw = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
+
+  const parsed = JSON.parse(raw) as {
+    slides: Array<{ headline: string; body: string; imagePrompt: string }>;
+    captionText: string;
+    suggestedHashtags: string[];
+  };
+
+  return {
+    slides: parsed.slides,
+    captionText: parsed.captionText,
+    contentType: carouselType,
+    suggestedHashtags: parsed.suggestedHashtags,
+  };
+}

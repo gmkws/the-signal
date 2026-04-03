@@ -22,6 +22,11 @@ export const CONTENT_TYPES = [
   "event_day_of",
   "event_recap",
   "custom",
+  "carousel_hook_solve",
+  "carousel_local_tips",
+  "carousel_machine_series",
+  "carousel_service_spotlight",
+  "carousel_custom",
 ] as const;
 
 export type ContentType = (typeof CONTENT_TYPES)[number];
@@ -40,6 +45,11 @@ export const CONTENT_TYPE_LABELS: Record<ContentType, string> = {
   event_day_of: "Event Day-Of",
   event_recap: "Event Recap",
   custom: "Custom Post",
+  carousel_hook_solve: "Carousel: Hook & Solve",
+  carousel_local_tips: "Carousel: Local Tips",
+  carousel_machine_series: "Carousel: Website Machine",
+  carousel_service_spotlight: "Carousel: Service Spotlight",
+  carousel_custom: "Carousel: Custom",
 };
 
 // ── Event Content Types (subset) ──────────────────────────────────────────

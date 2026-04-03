@@ -18,7 +18,7 @@ import {
   createNotification,
   getAllBrands,
 } from "../db";
-import { publishToFacebook, publishToInstagram } from "./meta";
+import { publishToFacebook, publishToInstagram, publishCarouselToFacebook, publishCarouselToInstagram } from "./meta";
 import { notifyOwner } from "../_core/notification";
 
 const MAX_RETRIES = 3;
@@ -103,13 +103,32 @@ async function publishPost(post: any): Promise<{ success: boolean; error?: strin
           errors.push("No connected Facebook account");
           continue;
         }
-        const result = await publishToFacebook(
-          fbAccount.pageId || fbAccount.platformAccountId,
-          fbAccount.accessToken ?? "",
-          post.content,
-          post.imageUrl || undefined
-        );
-        facebookPostId = result.id;
+        if (post.isCarousel && post.carouselSlides?.length >= 2) {
+          // Carousel post — use child_attachments
+          const slides = (post.carouselSlides as any[]).map((s: any) => ({
+            imageUrl: s.imageUrl || "",
+            caption: s.headline ? `${s.headline}\n${s.body}` : s.body,
+          })).filter((s: any) => s.imageUrl);
+          if (slides.length < 2) {
+            errors.push("Facebook carousel requires at least 2 slides with images — skipping");
+            continue;
+          }
+          const result = await publishCarouselToFacebook(
+            fbAccount.pageId || fbAccount.platformAccountId,
+            fbAccount.accessToken ?? "",
+            post.content,
+            slides
+          );
+          facebookPostId = result.id;
+        } else {
+          const result = await publishToFacebook(
+            fbAccount.pageId || fbAccount.platformAccountId,
+            fbAccount.accessToken ?? "",
+            post.content,
+            post.imageUrl || undefined
+          );
+          facebookPostId = result.id;
+        }
       } else if (platform === "instagram") {
         const igAccount = socialAccounts.find(
           (a: any) => a.platform === "instagram" && a.isConnected
@@ -118,17 +137,36 @@ async function publishPost(post: any): Promise<{ success: boolean; error?: strin
           errors.push("No connected Instagram account");
           continue;
         }
-        if (!post.imageUrl) {
-          errors.push("Instagram requires an image — skipping Instagram publish");
-          continue;
+        if (post.isCarousel && post.carouselSlides?.length >= 2) {
+          // Carousel post — use Instagram carousel API
+          const slides = (post.carouselSlides as any[]).map((s: any) => ({
+            imageUrl: s.imageUrl || "",
+            caption: s.headline ? `${s.headline}\n${s.body}` : s.body,
+          })).filter((s: any) => s.imageUrl);
+          if (slides.length < 2) {
+            errors.push("Instagram carousel requires at least 2 slides with images — skipping");
+            continue;
+          }
+          const result = await publishCarouselToInstagram(
+            igAccount.instagramBusinessId || igAccount.platformAccountId,
+            igAccount.accessToken ?? "",
+            post.content,
+            slides
+          );
+          instagramPostId = result.id;
+        } else {
+          if (!post.imageUrl) {
+            errors.push("Instagram requires an image — skipping Instagram publish");
+            continue;
+          }
+          const result = await publishToInstagram(
+            igAccount.instagramBusinessId || igAccount.platformAccountId,
+            igAccount.accessToken ?? "",
+            post.content,
+            post.imageUrl
+          );
+          instagramPostId = result.id;
         }
-        const result = await publishToInstagram(
-          igAccount.instagramBusinessId || igAccount.platformAccountId,
-          igAccount.accessToken ?? "",
-          post.content,
-          post.imageUrl
-        );
-        instagramPostId = result.id;
       }
     } catch (err: any) {
       errors.push(`${platform}: ${err.message}`);

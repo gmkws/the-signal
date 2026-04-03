@@ -111,6 +111,14 @@ export const posts = mysqlTable("posts", {
   // Retry tracking for failed posts
   retryCount: int("retryCount").default(0).notNull(),
   lastFailureReason: text("lastFailureReason"),
+  // Carousel support
+  isCarousel: boolean("isCarousel").default(false).notNull(),
+  carouselSlides: json("carouselSlides").$type<Array<{
+    headline: string;
+    body: string;
+    imagePrompt: string;
+    imageUrl?: string;
+  }>>(),
   // AI generation metadata
   aiGenerated: boolean("aiGenerated").default(false).notNull(),
   // Who created/modified
