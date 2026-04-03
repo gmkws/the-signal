@@ -65,7 +65,26 @@ export interface GeneratedContent {
 }
 
 const FORMAT_PROMPTS: Record<ContentFormat, string> = {
-  hey_tony: `Create a "Hey Tony" value-first tip post. This format leads with an actionable golden nugget of information — a specific SEO fix, AI tip, or website mistake that business owners can immediately use. The tone should be generous with knowledge, proving value by showing it, not just talking about it. Start with a hook that grabs attention, then deliver the tip clearly. End with a low-friction CTA like "Have questions? DM or call — answers don't cost anything."`,
+  hey_tony: `Write a value-first tip post in the "Hey Tony" style. "Hey Tony" is the NAME of this content format — it is NOT a greeting and must NOT appear anywhere in the post. Do not open with "Hey Tony", "Hey,", or any salutation.
+
+This format speaks directly to a small business owner as if you're a knowledgeable friend giving them a free consult. Pick ONE specific, actionable tip from the following topic areas — rotate through them and do NOT default to SEO every time:
+- Website speed and performance (Core Web Vitals, image compression, hosting)
+- Google Business Profile optimization and local map pack visibility
+- AI automation for small business (follow-up sequences, chatbots, scheduling)
+- Social media consistency and content batching
+- Print + digital marketing integration (how physical materials support digital presence)
+- Common website mistakes that silently cost leads (no clear CTA, broken mobile, slow load)
+- Email marketing or automated follow-up workflows
+- Branding and first impressions (logo, color consistency, photography)
+- E-commerce conversion tips (product photos, checkout friction, abandoned cart)
+- Photography and visual content for local businesses
+
+Structure:
+1. Open with a bold, specific hook — a surprising stat, a blunt truth, or a relatable pain point. Do NOT start with a question.
+2. Deliver the actual tip in 2–3 short paragraphs. Give away the real advice — don't tease it.
+3. Close with: "Have questions? Feel free to DM or call. Answers don't cost anything, but they can pay off immensely."
+
+Tone: Direct, conversational, zero fluff. Like a trusted expert, not a marketer.`,
 
   hook_solve: `Create a "Hook & Solve" format post. This uses a highly visual, scannable format that grabs attention instantly and walks the reader through a specific problem and the exact solution. Structure: 1) Hook with a relatable problem statement 2) Explain why it matters 3) Present the clear solution 4) End with a CTA. Use short paragraphs and line breaks for readability.`,
 
