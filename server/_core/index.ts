@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
+import multer from "multer";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
@@ -9,6 +10,9 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { runCronPublisher, startInProcessScheduler } from "../services/cronEngine";
 import { processDmMessage, parseInstagramWebhook, parseFacebookWebhook } from "../services/chatbot";
+import { storagePut } from "../storage";
+import { sdk } from "./sdk";
+import * as db from "../db";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -100,6 +104,87 @@ async function startServer() {
       }
     } catch (err: any) {
       console.error("[Webhook] Error processing Meta webhook:", err.message);
+    }
+  });
+
+  // ── Media Upload Endpoint ────────────────────────────────────────────────
+  // POST /api/upload/media
+  // Accepts: multipart/form-data with field "file" (image: jpg/png/webp, video: mp4)
+  // Body fields: postId (optional), slideIndex (optional, for carousel slides)
+  // Auth: session cookie (same mechanism as tRPC)
+  // Tier check: admins can always upload; premium clients can upload; managed clients cannot
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+    fileFilter: (_req, file, cb) => {
+      const allowed = ["image/jpeg", "image/png", "image/webp", "video/mp4", "video/quicktime"];
+      if (allowed.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error(`Unsupported file type: ${file.mimetype}. Allowed: JPG, PNG, WebP, MP4.`));
+      }
+    },
+  });
+
+  app.post("/api/upload/media", upload.single("file"), async (req: express.Request, res: express.Response) => {
+    try {
+      // Authenticate via session cookie (same as tRPC context)
+      let user: import("../../drizzle/schema").User | null = null;
+      try {
+        user = await sdk.authenticateRequest(req as any);
+      } catch {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      if (!user) return res.status(401).json({ error: "Not authenticated" });
+
+      // Tier check: admins can always upload; clients need premium tier
+      if (user.role !== "admin") {
+        const postId = req.body?.postId ? Number(req.body.postId) : null;
+        if (postId) {
+          const post = await db.getPostById(postId);
+          if (post) {
+            const brand = await db.getBrandById(post.brandId);
+            if (brand && brand.clientTier !== "premium") {
+              return res.status(403).json({ error: "Media upload requires a Premium tier subscription. Please contact your account manager to upgrade." });
+            }
+          }
+        }
+      }
+
+      if (!req.file) return res.status(400).json({ error: "No file provided" });
+
+      const file = req.file;
+      const isVideo = file.mimetype.startsWith("video/");
+      const ext = file.originalname.split(".").pop()?.toLowerCase() ?? (isVideo ? "mp4" : "jpg");
+      const randomSuffix = Math.random().toString(36).slice(2, 8);
+      const fileKey = `uploads/media/${user.id}-${Date.now()}-${randomSuffix}.${ext}`;
+
+      const { url } = await storagePut(fileKey, file.buffer, file.mimetype);
+
+      // If postId provided, update the post's uploadedMediaUrl directly
+      const postId = req.body?.postId ? Number(req.body.postId) : null;
+      const slideIndex = req.body?.slideIndex !== undefined && req.body.slideIndex !== "" ? Number(req.body.slideIndex) : null;
+
+      if (postId && slideIndex === null) {
+        await db.updatePost(postId, {
+          uploadedMediaUrl: url,
+          uploadedMediaType: isVideo ? "video" : "image",
+        });
+      } else if (postId && slideIndex !== null) {
+        const post = await db.getPostById(postId);
+        if (post?.carouselSlides) {
+          const slides = [...(post.carouselSlides as any[])];
+          if (slides[slideIndex]) {
+            slides[slideIndex] = { ...slides[slideIndex], uploadedImageUrl: url };
+            await db.updatePost(postId, { carouselSlides: slides as any });
+          }
+        }
+      }
+
+      return res.json({ url, fileKey, mediaType: isVideo ? "video" : "image" });
+    } catch (err: any) {
+      console.error("[Upload] Error:", err.message);
+      return res.status(500).json({ error: err.message });
     }
   });
 

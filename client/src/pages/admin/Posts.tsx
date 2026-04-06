@@ -14,6 +14,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { POST_STATUS_LABELS, CONTENT_TYPE_LABELS } from "@shared/types";
 import { PostPreviewPanel } from "@/components/PostPreviewPanel";
+import { MediaUploadButton } from "@/components/MediaUploadButton";
 
 export default function AdminPosts() {
   const utils = trpc.useUtils();
@@ -137,6 +138,12 @@ export default function AdminPosts() {
       <div className="space-y-2">
         <Label>Image URL</Label>
         <Input value={form.imageUrl} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })} placeholder="https://..." />
+        <MediaUploadButton
+          compact
+          onUploadComplete={(url) => setForm({ ...form, imageUrl: url })}
+          currentUrl={form.imageUrl}
+          allowVideo={true}
+        />
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">

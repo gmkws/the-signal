@@ -18,6 +18,7 @@ import {
   Plus, Trash2, RefreshCw, Copy, Check, GripVertical, CalendarDays, Layers
 } from "lucide-react";
 import { toast } from "sonner";
+import { MediaUploadButton } from "@/components/MediaUploadButton";
 
 interface Slide {
   headline: string;
@@ -352,6 +353,12 @@ export default function CarouselBuilder({ brandId, brandName }: Props) {
                         </Button>
                       </div>
                     )}
+                    <MediaUploadButton
+                      compact
+                      onUploadComplete={(url) => handleSlideChange(activeSlide, "imageUrl", url)}
+                      currentUrl={currentSlide.imageUrl}
+                      allowVideo={false}
+                    />
                   </div>
                 </div>
               </CardContent>

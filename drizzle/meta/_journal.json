@@ -64,6 +64,13 @@
       "when": 1775234007051,
       "tag": "0008_worthless_butterfly",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1775236434531,
+      "tag": "0009_fine_xorn",
+      "breakpoints": true
     }
   ]
 }

@@ -230,3 +230,21 @@
 - [x] Visual "No Image" badge (yellow) on each post card that lacks an image
 - [x] Count badge on filter button showing total posts needing images
 - [x] Empty state message when all posts have images
+
+## Fill Schedule — Image Generation in Batch
+- [x] generateBatch() calls smart image generation for each post after content is generated
+- [x] Carousel posts in batch: generate per-slide images
+- [x] Image generation failures are non-fatal (post saved without image, flagged as needs-image)
+- [x] FillScheduleModal shows image generation progress separately from content generation
+- [x] fillSchedule tRPC procedure updated to include imageUrl on each created post
+
+## Media Upload Override
+- [x] Schema: add uploadedMediaUrl, uploadedMediaType fields to posts table
+- [x] pnpm db:push migration (0009_charming_beast.sql)
+- [x] S3 upload: server-side multipart endpoint POST /api/upload/media
+- [x] Tier-based access control: admin always, premium client for own brand
+- [x] MediaUploadButton component: drag-drop zone, file picker, progress bar, preview
+- [x] AI Engine page: Upload Your Own Media section
+- [x] Posts editor: MediaUploadButton in compact mode
+- [x] CarouselBuilder: per-slide upload via compact MediaUploadButton
+- [x] Support JPG, PNG, WebP, MP4 formats (50MB max)

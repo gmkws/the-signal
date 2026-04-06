@@ -118,7 +118,11 @@ export const posts = mysqlTable("posts", {
     body: string;
     imagePrompt: string;
     imageUrl?: string;
+    uploadedImageUrl?: string;
   }>>(),
+  // User-uploaded media override (takes priority over AI-generated imageUrl)
+  uploadedMediaUrl: text("uploadedMediaUrl"),
+  uploadedMediaType: mysqlEnum("uploadedMediaType", ["image", "video"]),
   // AI generation metadata
   aiGenerated: boolean("aiGenerated").default(false).notNull(),
   // Who created/modified

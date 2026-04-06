@@ -12,6 +12,7 @@ import { useState, useCallback } from "react";
 import FillScheduleModal from "@/components/FillScheduleModal";
 import { PostPreviewPanel } from "@/components/PostPreviewPanel";
 import CarouselBuilder from "@/components/CarouselBuilder";
+import { MediaUploadButton } from "@/components/MediaUploadButton";
 import { toast } from "sonner";
 import { CONTENT_TYPE_LABELS } from "@shared/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -545,6 +546,22 @@ export default function AdminAI() {
                       )}
                     </TabsContent>
                   </Tabs>
+                </div>
+                {/* Upload Your Own Media */}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2 text-sm">
+                    <ImageIcon className="h-4 w-4 text-muted-foreground" /> Upload Your Own Media
+                  </Label>
+                  <MediaUploadButton
+                    onUploadComplete={(url) => {
+                      if (url) {
+                        setGeneratedImageUrl(url);
+                        setSmartImageUrl(url);
+                      }
+                    }}
+                    currentUrl={smartImageUrl || generatedImageUrl || undefined}
+                    allowVideo={true}
+                  />
                 </div>
                 {/* Post Preview Panel — shown when content exists */}
                 {generatedContent && (

@@ -50,6 +50,7 @@ export default function FillScheduleModal({ open, onClose, brandId, brandName }:
   const [confirmed, setConfirmed] = useState(false);
   const [done, setDone] = useState(false);
   const [createdCount, setCreatedCount] = useState(0);
+  const [imageStats, setImageStats] = useState<{ generated: number; failed: number } | null>(null);
 
   // Tomorrow as start date
   const startDate = useMemo(() => {
@@ -67,6 +68,7 @@ export default function FillScheduleModal({ open, onClose, brandId, brandName }:
   const fillSchedule = trpc.ai.fillSchedule.useMutation({
     onSuccess: (data) => {
       setCreatedCount(data.created);
+      setImageStats({ generated: (data as any).imagesGenerated ?? 0, failed: (data as any).imagesFailed ?? 0 });
       setDone(true);
       utils.post.list.invalidate();
       utils.post.calendar.invalidate();
@@ -95,6 +97,7 @@ export default function FillScheduleModal({ open, onClose, brandId, brandName }:
     setConfirmed(false);
     setDone(false);
     setCreatedCount(0);
+    setImageStats(null);
     onClose();
   };
 
@@ -135,6 +138,15 @@ export default function FillScheduleModal({ open, onClose, brandId, brandName }:
               <p className="text-muted-foreground mt-1">
                 Saved as <strong>{createAs === "draft" ? "drafts" : "scheduled posts"}</strong> — review them in the Posts or Calendar page.
               </p>
+              {imageStats && (
+                <p className="text-sm text-muted-foreground mt-2">
+                  🖼️ {imageStats.generated} image{imageStats.generated !== 1 ? "s" : ""} generated
+                  {imageStats.failed > 0 && (
+                    <span className="text-yellow-400"> · {imageStats.failed} failed — use the “Needs Image” filter to regenerate
+                    </span>
+                  )}
+                </p>
+              )}
             </div>
             <Button onClick={handleClose} className="mt-4">Done</Button>
           </div>
@@ -143,8 +155,8 @@ export default function FillScheduleModal({ open, onClose, brandId, brandName }:
           <div className="py-12 text-center space-y-4">
             <Loader2 className="h-12 w-12 text-primary mx-auto animate-spin" />
             <div>
-              <p className="text-lg font-semibold">Generating {newCount} posts...</p>
-              <p className="text-sm text-muted-foreground mt-1">This may take 30–90 seconds. The AI is writing each post in your brand voice.</p>
+              <p className="text-lg font-semibold">Generating {newCount} posts with images...</p>
+              <p className="text-sm text-muted-foreground mt-1">Writing content and generating a visual for each post. This may take 1–3 minutes depending on queue size.</p>
             </div>
           </div>
         ) : (

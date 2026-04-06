@@ -556,7 +556,11 @@ const aiRouter = router({
       const generated = await generateBatch(brand.name, slots, brand.voiceSettings as any, sourceInfo);
       // Save to DB
       const saved: number[] = [];
+      let imagesGenerated = 0;
+      let imagesFailed = 0;
       for (const post of generated) {
+        if (post.imageUrl) imagesGenerated++;
+        if (post.imageGenerationFailed) imagesFailed++;
         const created = await db.createPost({
           brandId: input.brandId,
           content: post.content,
@@ -566,10 +570,11 @@ const aiRouter = router({
           platforms: ["facebook", "instagram"],
           aiGenerated: true,
           createdBy: ctx.user.id,
+          imageUrl: post.imageUrl ?? null,
         });
         saved.push(created.id);
       }
-      return { created: saved.length, posts: saved };
+      return { created: saved.length, posts: saved, imagesGenerated, imagesFailed };
     }),
 
   // Generate a carousel post (multi-slide)

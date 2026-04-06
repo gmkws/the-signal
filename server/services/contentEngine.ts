@@ -303,6 +303,8 @@ export interface BatchGeneratedPost {
   contentType: ContentFormat;
   scheduledAt: Date;
   suggestedImagePrompt: string;
+  imageUrl?: string;            // Generated image URL (undefined if generation failed)
+  imageGenerationFailed?: boolean;
 }
 
 /**
@@ -348,13 +350,16 @@ export function buildBatchSlots(
 
 /**
  * Generate a batch of posts for the Fill Schedule feature.
- * Generates posts sequentially to avoid rate limiting.
+ * Generates posts AND images sequentially to avoid rate limiting.
+ * Image generation is non-fatal — if it fails, the post is saved without an image
+ * and flagged so the "Needs Image" filter can catch it.
  */
 export async function generateBatch(
   brandName: string,
   slots: BatchSlot[],
   voiceSettings?: BrandVoice | null,
-  sourceInfo?: ContentSourceInfo
+  sourceInfo?: ContentSourceInfo,
+  generateImages = true
 ): Promise<BatchGeneratedPost[]> {
   const results: BatchGeneratedPost[] = [];
 
@@ -373,11 +378,25 @@ export async function generateBatch(
         effectiveSourceInfo
       );
 
+      // Generate image for this post (non-fatal — post is saved without image if this fails)
+      let imageUrl: string | undefined;
+      let imageGenerationFailed = false;
+      if (generateImages && generated.suggestedImagePrompt) {
+        try {
+          imageUrl = await generatePostImage(generated.suggestedImagePrompt);
+        } catch (imgErr) {
+          console.warn(`[BatchGenerate] Image generation failed for slot ${slot.scheduledAt.toISOString()}:`, imgErr);
+          imageGenerationFailed = true;
+        }
+      }
+
       results.push({
         content: generated.content,
         contentType: generated.contentType,
         scheduledAt: slot.scheduledAt,
         suggestedImagePrompt: generated.suggestedImagePrompt,
+        imageUrl,
+        imageGenerationFailed,
       });
     } catch (err) {
       console.error(`[BatchGenerate] Failed for slot ${slot.scheduledAt.toISOString()}:`, err);
@@ -387,6 +406,7 @@ export async function generateBatch(
         contentType: slot.contentType,
         scheduledAt: slot.scheduledAt,
         suggestedImagePrompt: `Professional social media graphic for ${brandName}`,
+        imageGenerationFailed: true,
       });
     }
   }
