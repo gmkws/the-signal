@@ -76,6 +76,44 @@ export async function getAllUsers() {
   return db.select().from(users).orderBy(desc(users.createdAt));
 }
 
+export async function getUserByEmail(email: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function setUserPasswordHash(openId: string, passwordHash: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(users).set({ passwordHash }).where(eq(users.openId, openId));
+}
+
+export async function getUserByResetToken(token: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.passwordResetToken, token)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function setPasswordResetToken(openId: string, token: string, expires: Date) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(users).set({ passwordResetToken: token, passwordResetExpires: expires }).where(eq(users.openId, openId));
+}
+
+export async function clearPasswordResetToken(openId: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(users).set({ passwordResetToken: null, passwordResetExpires: null }).where(eq(users.openId, openId));
+}
+
+export async function updateUserStripeInfo(openId: string, data: { stripeCustomerId?: string; stripeSubscriptionId?: string; stripeSubscriptionStatus?: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(users).set(data).where(eq(users.openId, openId));
+}
+
 // ── Brands ─────────────────────────────────────────────────────────────────
 
 export async function createBrand(brand: InsertBrand) {

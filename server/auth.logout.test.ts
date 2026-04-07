@@ -15,11 +15,17 @@ function createAuthContext(): { ctx: TrpcContext; clearedCookies: CookieCall[] }
 
   const user: AuthenticatedUser = {
     id: 1,
-    openId: "sample-user",
+    openId: "local_sample-user",
     email: "sample@example.com",
     name: "Sample User",
-    loginMethod: "manus",
+    loginMethod: "email",
     role: "user",
+    passwordHash: null,
+    passwordResetToken: null,
+    passwordResetExpires: null,
+    stripeCustomerId: null,
+    stripeSubscriptionId: null,
+    stripeSubscriptionStatus: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     lastSignedIn: new Date(),
@@ -58,5 +64,29 @@ describe("auth.logout", () => {
       httpOnly: true,
       path: "/",
     });
+  });
+});
+
+describe("auth.me", () => {
+  it("returns the user when authenticated", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+
+    const result = await caller.auth.me();
+    expect(result).toBeTruthy();
+    expect(result?.email).toBe("sample@example.com");
+    expect(result?.loginMethod).toBe("email");
+  });
+
+  it("returns null when not authenticated", async () => {
+    const ctx: TrpcContext = {
+      user: null,
+      req: { protocol: "https", headers: {} } as TrpcContext["req"],
+      res: { clearCookie: () => {} } as any,
+    };
+    const caller = appRouter.createCaller(ctx);
+
+    const result = await caller.auth.me();
+    expect(result).toBeNull();
   });
 });

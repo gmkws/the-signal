@@ -248,3 +248,42 @@
 - [x] Posts editor: MediaUploadButton in compact mode
 - [x] CarouselBuilder: per-slide upload via compact MediaUploadButton
 - [x] Support JPG, PNG, WebP, MP4 formats (50MB max)
+
+## Standalone Email/Password Auth (Replace Manus OAuth)
+- [x] Add passwordHash, passwordResetToken, passwordResetExpires fields to users table
+- [x] pnpm db:push migration
+- [x] Server auth service: register, login, verifyPassword, generateJWT, verifyJWT
+- [x] bcrypt password hashing
+- [x] JWT session tokens (cookie-based, same cookie name for compatibility)
+- [x] POST /api/auth/register endpoint
+- [x] POST /api/auth/login endpoint
+- [x] POST /api/auth/logout endpoint
+- [x] POST /api/auth/reset-password-request endpoint
+- [x] POST /api/auth/reset-password endpoint
+- [x] Remove Manus OAuth callback route (/api/oauth/callback)
+- [x] Remove sdk.ts Manus SDK dependency from auth flow
+- [x] Update context.ts to use standalone JWT verification
+- [x] Login page at /login (email + password form)
+- [x] Signup page at /signup (with Stripe payment)
+- [x] Password reset page at /reset-password
+- [x] Admin: create accounts from admin panel
+- [x] Update useAuth hook and auth context for standalone auth
+- [x] Remove all VITE_OAUTH_PORTAL_URL, OAUTH_SERVER_URL, VITE_APP_ID dependencies
+- [x] App works fully self-contained with no Manus dependencies
+
+## Stripe Payment Integration
+- [x] Stripe service with checkout sessions, customer portal, webhook handling
+- [x] STRIPE_SECRET_KEY and VITE_STRIPE_PUBLISHABLE_KEY env vars (user adds later)
+- [x] Stripe Checkout for tier selection (Managed/Premium)
+- [x] POST /api/stripe/create-checkout-session endpoint
+- [x] POST /api/webhooks/stripe endpoint for Stripe events
+- [x] Handle: checkout.session.completed, customer.subscription.updated, customer.subscription.deleted, invoice.payment_failed
+- [x] On successful payment: subscription activated, user logged in
+- [x] Add stripeCustomerId, stripeSubscriptionId, stripeSubscriptionStatus to users table
+- [x] Admin can see subscription status per client (via users table)
+- [x] Graceful fallback: app works without Stripe keys (admin can create accounts manually)
+- [x] Recurring monthly subscription support
+
+## Deployment
+- [ ] Push updated code to GitHub (gmkws/the-signal)
+- [ ] Railway auto-deploys from push

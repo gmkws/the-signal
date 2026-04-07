@@ -13,6 +13,7 @@ import { processDmMessage, parseInstagramWebhook, parseFacebookWebhook } from ".
 import { storagePut } from "../storage";
 import { sdk } from "./sdk";
 import * as db from "../db";
+import { handleStripeWebhook, createCheckoutSession, createCustomerPortalSession, isStripeConfigured } from "../services/stripe";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -39,8 +40,78 @@ async function startServer() {
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
-  // OAuth callback under /api/oauth/callback
+  // Standalone auth routes (login, register, password reset)
   registerOAuthRoutes(app);
+
+  // ── Stripe Webhook (raw body required for signature verification) ────────
+  app.post("/api/webhooks/stripe", express.raw({ type: "application/json" }), async (req: express.Request, res: express.Response) => {
+    const sig = req.headers["stripe-signature"] as string;
+    if (!sig) return res.status(400).json({ error: "Missing stripe-signature header" });
+    try {
+      const result = await handleStripeWebhook(req.body, sig);
+      if (result.received) {
+        return res.json({ received: true });
+      }
+      return res.status(400).json({ error: result.error });
+    } catch (err: any) {
+      console.error("[Stripe] Webhook error:", err.message);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Stripe Checkout Session ──────────────────────────────────────────────
+  app.post("/api/stripe/create-checkout-session", async (req: express.Request, res: express.Response) => {
+    try {
+      let user: import("../../drizzle/schema").User | null = null;
+      try { user = await sdk.authenticateRequest(req as any); } catch { /* unauthenticated */ }
+      if (!user) return res.status(401).json({ error: "Not authenticated" });
+
+      const { tier } = req.body ?? {};
+      if (!tier || !['managed', 'premium'].includes(tier)) {
+        return res.status(400).json({ error: "Invalid tier. Must be 'managed' or 'premium'." });
+      }
+
+      const origin = req.headers.origin || req.headers.referer?.replace(/\/$/, '') || '';
+      const result = await createCheckoutSession({
+        userOpenId: user.openId,
+        userEmail: user.email || '',
+        tier,
+        successUrl: `${origin}/client?checkout=success`,
+        cancelUrl: `${origin}/signup?checkout=canceled`,
+      });
+
+      if ('error' in result) return res.status(400).json({ error: result.error });
+      return res.json({ url: result.url });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Stripe Customer Portal ──────────────────────────────────────────────
+  app.post("/api/stripe/customer-portal", async (req: express.Request, res: express.Response) => {
+    try {
+      let user: import("../../drizzle/schema").User | null = null;
+      try { user = await sdk.authenticateRequest(req as any); } catch { /* unauthenticated */ }
+      if (!user) return res.status(401).json({ error: "Not authenticated" });
+      if (!user.stripeCustomerId) return res.status(400).json({ error: "No Stripe subscription found" });
+
+      const origin = req.headers.origin || req.headers.referer?.replace(/\/$/, '') || '';
+      const result = await createCustomerPortalSession({
+        stripeCustomerId: user.stripeCustomerId,
+        returnUrl: `${origin}/client`,
+      });
+
+      if ('error' in result) return res.status(400).json({ error: result.error });
+      return res.json({ url: result.url });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Stripe Status (public check) ────────────────────────────────────────
+  app.get("/api/stripe/status", (_req: express.Request, res: express.Response) => {
+    return res.json({ configured: isStripeConfigured() });
+  });
 
   // ── Cron endpoint (Railway-compatible HTTP trigger) ──────────────────────
   // GET  /api/cron/publish  — triggered by Railway cron or external scheduler

@@ -8,6 +8,11 @@ import DashboardLayout from "./components/DashboardLayout";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 
+// Auth Pages
+import Login from "./pages/Login";
+import Signup from "./pages/Signup";
+import ResetPassword from "./pages/ResetPassword";
+
 // Admin Pages
 import AdminDashboard from "./pages/admin/Dashboard";
 import AdminBrands from "./pages/admin/Brands";
@@ -72,13 +77,16 @@ function AuthRouter() {
 
   if (loading) return <LoadingScreen />;
 
-  // Unauthenticated: allow landing page and onboarding (with invite token)
+  // Unauthenticated: allow public pages
   if (!user) {
     return (
       <Switch>
         <Route path="/" component={Home} />
+        <Route path="/login" component={Login} />
+        <Route path="/signup" component={Signup} />
+        <Route path="/reset-password" component={ResetPassword} />
         <Route path="/onboarding" component={Onboarding} />
-        <Route><Redirect to="/" /></Route>
+        <Route><Redirect to="/login" /></Route>
       </Switch>
     );
   }
@@ -86,88 +94,99 @@ function AuthRouter() {
   const isAdmin = user.role === "admin";
 
   return (
-    <DashboardLayout>
-      <Switch>
-        {/* Onboarding — accessible to all authenticated users */}
-        <Route path="/onboarding" component={Onboarding} />
+    <Switch>
+      {/* Auth pages redirect to dashboard when already logged in */}
+      <Route path="/login" component={Login} />
+      <Route path="/signup" component={Signup} />
+      <Route path="/reset-password" component={ResetPassword} />
 
-        {/* Admin routes — guarded */}
-        <Route path="/admin">
-          <AdminGuard><AdminDashboard /></AdminGuard>
-        </Route>
-        <Route path="/admin/brands">
-          <AdminGuard><AdminBrands /></AdminGuard>
-        </Route>
-        <Route path="/admin/calendar">
-          <AdminGuard><AdminCalendar /></AdminGuard>
-        </Route>
-        <Route path="/admin/posts">
-          <AdminGuard><AdminPosts /></AdminGuard>
-        </Route>
-        <Route path="/admin/ai">
-          <AdminGuard><AdminAI /></AdminGuard>
-        </Route>
-        <Route path="/admin/analytics">
-          <AdminGuard><AdminAnalytics /></AdminGuard>
-        </Route>
-        <Route path="/admin/notifications">
-          <AdminGuard><AdminNotifications /></AdminGuard>
-        </Route>
-        <Route path="/admin/social">
-          <AdminGuard><AdminSocial /></AdminGuard>
-        </Route>
-        <Route path="/admin/users">
-          <AdminGuard><AdminUsers /></AdminGuard>
-        </Route>
-        <Route path="/admin/services">
-          <AdminGuard><AdminServiceSpotlight /></AdminGuard>
-        </Route>
-        <Route path="/admin/events">
-          <AdminGuard><AdminEvents /></AdminGuard>
-        </Route>
-        <Route path="/admin/system-health">
-          <AdminGuard><AdminSystemHealth /></AdminGuard>
-        </Route>
-        <Route path="/admin/onboarding">
-          <AdminGuard><AdminOnboardingApproval /></AdminGuard>
-        </Route>
-        <Route path="/admin/leads">
-          <AdminGuard><AdminLeads /></AdminGuard>
-        </Route>
-        {/* Client routess — guarded */}
-        <Route path="/client">
-          <ClientGuard><ClientDashboard /></ClientGuard>
-        </Route>
-        <Route path="/client/calendar">
-          <ClientGuard><ClientCalendar /></ClientGuard>
-        </Route>
-        <Route path="/client/posts">
-          <ClientGuard><ClientPosts /></ClientGuard>
-        </Route>
-        <Route path="/client/notifications">
-          <ClientGuard><ClientNotifications /></ClientGuard>
-        </Route>
-        <Route path="/client/services">
-          <ClientGuard><ClientServiceSpotlight /></ClientGuard>
-        </Route>
-        <Route path="/client/events">
-          <ClientGuard><ClientEvents /></ClientGuard>
-        </Route>
-        <Route path="/client/welcome">
-          <ClientGuard><ClientWelcome /></ClientGuard>
-        </Route>
-        <Route path="/client/leads">
-          <ClientGuard><AdminLeads /></ClientGuard>
-        </Route>
+      {/* Onboarding — accessible to all authenticated users */}
+      <Route path="/onboarding" component={Onboarding} />
 
-        {/* Root redirect based on role */}
-        <Route path="/">
-          {isAdmin ? <Redirect to="/admin" /> : <Redirect to="/client" />}
-        </Route>
+      {/* All authenticated routes wrapped in DashboardLayout */}
+      <Route>
+        <DashboardLayout>
+          <Switch>
+            {/* Admin routes — guarded */}
+            <Route path="/admin">
+              <AdminGuard><AdminDashboard /></AdminGuard>
+            </Route>
+            <Route path="/admin/brands">
+              <AdminGuard><AdminBrands /></AdminGuard>
+            </Route>
+            <Route path="/admin/calendar">
+              <AdminGuard><AdminCalendar /></AdminGuard>
+            </Route>
+            <Route path="/admin/posts">
+              <AdminGuard><AdminPosts /></AdminGuard>
+            </Route>
+            <Route path="/admin/ai">
+              <AdminGuard><AdminAI /></AdminGuard>
+            </Route>
+            <Route path="/admin/analytics">
+              <AdminGuard><AdminAnalytics /></AdminGuard>
+            </Route>
+            <Route path="/admin/notifications">
+              <AdminGuard><AdminNotifications /></AdminGuard>
+            </Route>
+            <Route path="/admin/social">
+              <AdminGuard><AdminSocial /></AdminGuard>
+            </Route>
+            <Route path="/admin/users">
+              <AdminGuard><AdminUsers /></AdminGuard>
+            </Route>
+            <Route path="/admin/services">
+              <AdminGuard><AdminServiceSpotlight /></AdminGuard>
+            </Route>
+            <Route path="/admin/events">
+              <AdminGuard><AdminEvents /></AdminGuard>
+            </Route>
+            <Route path="/admin/system-health">
+              <AdminGuard><AdminSystemHealth /></AdminGuard>
+            </Route>
+            <Route path="/admin/onboarding">
+              <AdminGuard><AdminOnboardingApproval /></AdminGuard>
+            </Route>
+            <Route path="/admin/leads">
+              <AdminGuard><AdminLeads /></AdminGuard>
+            </Route>
 
-        <Route component={NotFound} />
-      </Switch>
-    </DashboardLayout>
+            {/* Client routes — guarded */}
+            <Route path="/client">
+              <ClientGuard><ClientDashboard /></ClientGuard>
+            </Route>
+            <Route path="/client/calendar">
+              <ClientGuard><ClientCalendar /></ClientGuard>
+            </Route>
+            <Route path="/client/posts">
+              <ClientGuard><ClientPosts /></ClientGuard>
+            </Route>
+            <Route path="/client/notifications">
+              <ClientGuard><ClientNotifications /></ClientGuard>
+            </Route>
+            <Route path="/client/services">
+              <ClientGuard><ClientServiceSpotlight /></ClientGuard>
+            </Route>
+            <Route path="/client/events">
+              <ClientGuard><ClientEvents /></ClientGuard>
+            </Route>
+            <Route path="/client/welcome">
+              <ClientGuard><ClientWelcome /></ClientGuard>
+            </Route>
+            <Route path="/client/leads">
+              <ClientGuard><AdminLeads /></ClientGuard>
+            </Route>
+
+            {/* Root redirect based on role */}
+            <Route path="/">
+              {isAdmin ? <Redirect to="/admin" /> : <Redirect to="/client" />}
+            </Route>
+
+            <Route component={NotFound} />
+          </Switch>
+        </DashboardLayout>
+      </Route>
+    </Switch>
   );
 }
 

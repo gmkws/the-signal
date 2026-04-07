@@ -2,7 +2,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { getLoginUrl } from "@/const";
+
 import { useLocation } from "wouter";
 import {
   Zap, BarChart3, Calendar, Bot, Share2, ShoppingBag,
@@ -80,7 +80,7 @@ export default function Home() {
         navigate("/client");
       }
     } else {
-      window.location.href = getLoginUrl();
+      navigate("/signup");
     }
   };
 
@@ -111,7 +111,7 @@ export default function Home() {
               <>
                 <Button
                   variant="ghost"
-                  onClick={() => window.location.href = getLoginUrl()}
+                  onClick={() => navigate("/login")}
                   className="text-muted-foreground hover:text-foreground"
                 >
                   Sign in
