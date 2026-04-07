@@ -285,5 +285,13 @@
 - [x] Recurring monthly subscription support
 
 ## Deployment
-- [ ] Push updated code to GitHub (gmkws/the-signal)
-- [ ] Railway auto-deploys from push
+- [x] Push updated code to GitHub (gmkws/the-signal)
+- [x] Railway auto-deploys from push
+
+## Railway Healthcheck Fix
+- [x] Fix Stripe webhook raw body: move before global JSON parser to avoid conflict
+- [x] Fix PORT binding: Railway requires exact PORT, remove findAvailablePort fallback in production
+- [x] Add explicit health check endpoint GET /api/health
+- [x] Ensure server binds to 0.0.0.0 (not just localhost) for Railway
+- [x] Test production build locally
+- [ ] Push fix to GitHub

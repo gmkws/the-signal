@@ -37,13 +37,13 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
-  // Configure body parser with larger size limit for file uploads
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.urlencoded({ limit: "50mb", extended: true }));
-  // Standalone auth routes (login, register, password reset)
-  registerOAuthRoutes(app);
 
-  // ── Stripe Webhook (raw body required for signature verification) ────────
+  // ── Health Check (must be first, before any body parsers) ────────────────
+  app.get("/api/health", (_req: express.Request, res: express.Response) => {
+    return res.status(200).json({ status: "ok", timestamp: Date.now() });
+  });
+
+  // ── Stripe Webhook (raw body required — MUST be before global JSON parser) ──
   app.post("/api/webhooks/stripe", express.raw({ type: "application/json" }), async (req: express.Request, res: express.Response) => {
     const sig = req.headers["stripe-signature"] as string;
     if (!sig) return res.status(400).json({ error: "Missing stripe-signature header" });
@@ -58,6 +58,13 @@ async function startServer() {
       return res.status(500).json({ error: err.message });
     }
   });
+
+  // ── Global body parsers (after Stripe webhook to avoid consuming raw body) ──
+  app.use(express.json({ limit: "50mb" }));
+  app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+  // Standalone auth routes (login, register, password reset)
+  registerOAuthRoutes(app);
 
   // ── Stripe Checkout Session ──────────────────────────────────────────────
   app.post("/api/stripe/create-checkout-session", async (req: express.Request, res: express.Response) => {
@@ -114,10 +121,6 @@ async function startServer() {
   });
 
   // ── Cron endpoint (Railway-compatible HTTP trigger) ──────────────────────
-  // GET  /api/cron/publish  — triggered by Railway cron or external scheduler
-  // POST /api/cron/publish  — alternative method
-  // Optionally protected by CRON_SECRET env var:
-  //   Authorization: Bearer <CRON_SECRET>  or  ?secret=<CRON_SECRET>
   const cronHandler = async (req: express.Request, res: express.Response) => {
     const cronSecret = process.env.CRON_SECRET;
     if (cronSecret) {
@@ -137,8 +140,6 @@ async function startServer() {
   app.post("/api/cron/publish", cronHandler);
 
   // ── Meta Webhook (Instagram DMs + Facebook Messenger) ────────────────────
-  // GET  /api/webhooks/meta  — Meta webhook verification challenge
-  // POST /api/webhooks/meta  — Incoming DM events
   app.get("/api/webhooks/meta", (req: express.Request, res: express.Response) => {
     const mode = req.query["hub.mode"];
     const token = req.query["hub.verify_token"];
@@ -152,7 +153,6 @@ async function startServer() {
   });
 
   app.post("/api/webhooks/meta", async (req: express.Request, res: express.Response) => {
-    // Acknowledge immediately (Meta requires 200 within 20s)
     res.status(200).send("EVENT_RECEIVED");
     const body = req.body;
     const object = body?.object;
@@ -179,14 +179,9 @@ async function startServer() {
   });
 
   // ── Media Upload Endpoint ────────────────────────────────────────────────
-  // POST /api/upload/media
-  // Accepts: multipart/form-data with field "file" (image: jpg/png/webp, video: mp4)
-  // Body fields: postId (optional), slideIndex (optional, for carousel slides)
-  // Auth: session cookie (same mechanism as tRPC)
-  // Tier check: admins can always upload; premium clients can upload; managed clients cannot
   const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+    limits: { fileSize: 50 * 1024 * 1024 },
     fileFilter: (_req, file, cb) => {
       const allowed = ["image/jpeg", "image/png", "image/webp", "video/mp4", "video/quicktime"];
       if (allowed.includes(file.mimetype)) {
@@ -199,7 +194,6 @@ async function startServer() {
 
   app.post("/api/upload/media", upload.single("file"), async (req: express.Request, res: express.Response) => {
     try {
-      // Authenticate via session cookie (same as tRPC context)
       let user: import("../../drizzle/schema").User | null = null;
       try {
         user = await sdk.authenticateRequest(req as any);
@@ -208,7 +202,6 @@ async function startServer() {
       }
       if (!user) return res.status(401).json({ error: "Not authenticated" });
 
-      // Tier check: admins can always upload; clients need premium tier
       if (user.role !== "admin") {
         const postId = req.body?.postId ? Number(req.body.postId) : null;
         if (postId) {
@@ -232,7 +225,6 @@ async function startServer() {
 
       const { url } = await storagePut(fileKey, file.buffer, file.mimetype);
 
-      // If postId provided, update the post's uploadedMediaUrl directly
       const postId = req.body?.postId ? Number(req.body.postId) : null;
       const slideIndex = req.body?.slideIndex !== undefined && req.body.slideIndex !== "" ? Number(req.body.slideIndex) : null;
 
@@ -267,6 +259,7 @@ async function startServer() {
       createContext,
     })
   );
+
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
@@ -274,19 +267,26 @@ async function startServer() {
     serveStatic(app);
   }
 
+  // ── Port binding ─────────────────────────────────────────────────────────
+  // In production (Railway), always use the exact PORT env var.
+  // In development, fall back to port scanning if the preferred port is busy.
   const preferredPort = parseInt(process.env.PORT || "3000");
-  const port = await findAvailablePort(preferredPort);
+  let port: number;
 
-  if (port !== preferredPort) {
-    console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
+  if (process.env.NODE_ENV === "production") {
+    port = preferredPort;
+  } else {
+    port = await findAvailablePort(preferredPort);
+    if (port !== preferredPort) {
+      console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
+    }
   }
 
-  server.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}/`);
+  // Bind to 0.0.0.0 so Railway's load balancer can reach the server
+  server.listen(port, "0.0.0.0", () => {
+    console.log(`Server running on http://0.0.0.0:${port}/`);
 
     // Start in-process scheduler unless Railway cron is configured externally.
-    // Set DISABLE_IN_PROCESS_CRON=true when using external cron jobs to avoid
-    // double-publishing.
     if (process.env.DISABLE_IN_PROCESS_CRON !== "true") {
       startInProcessScheduler();
     } else {
@@ -295,4 +295,7 @@ async function startServer() {
   });
 }
 
-startServer().catch(console.error);
+startServer().catch((err) => {
+  console.error("[Fatal] Server failed to start:", err);
+  process.exit(1);
+});
