@@ -294,4 +294,11 @@
 - [x] Add explicit health check endpoint GET /api/health
 - [x] Ensure server binds to 0.0.0.0 (not just localhost) for Railway
 - [x] Test production build locally
+- [x] Push fix to GitHub
+
+## Railway Healthcheck Fix v2 — Node 18 Compatibility
+- [x] Root cause: vite devDependencies bundled as top-level imports in dist/index.js — fail when pruned on Railway
+- [x] Fix vite.ts: use dynamic imports with string concatenation to prevent esbuild from bundling devDependencies
+- [x] Add .node-version (22) and engines field (>=20) for Railway Node version
+- [x] Rebuild and verify dist/index.js has no vite/plugin imports or import.meta.dirname
 - [ ] Push fix to GitHub
