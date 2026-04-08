@@ -15,6 +15,7 @@ import { sdk } from "./sdk";
 import * as db from "../db";
 import { handleStripeWebhook, createCheckoutSession, createCustomerPortalSession, isStripeConfigured } from "../services/stripe";
 import { runMigrationsOnStartup } from "../services/migrate";
+import { seedAdminAccount } from "../services/seed";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -44,19 +45,23 @@ async function startServer() {
   console.log(`[Startup] DATABASE_URL=${process.env.DATABASE_URL ? 'SET (' + process.env.DATABASE_URL.replace(/:([^@]+)@/, ':****@') + ')' : 'NOT SET'}`);
   console.log(`[Startup] JWT_SECRET=${process.env.JWT_SECRET ? 'SET' : 'NOT SET'}`);
   console.log(`[Startup] STRIPE_SECRET_KEY=${process.env.STRIPE_SECRET_KEY ? 'SET' : 'NOT SET'}`);
+  console.log(`[Startup] SMTP_HOST=${process.env.SMTP_HOST ? 'SET (' + process.env.SMTP_HOST + ')' : 'NOT SET — email notifications disabled'}`);
+  console.log(`[Startup] ADMIN_EMAIL=${process.env.ADMIN_EMAIL || process.env.SMTP_USER || 'NOT SET'}`);
 
-  // Run migrations then pre-warm connection (non-blocking — server starts regardless)
-  runMigrationsOnStartup().then(() => {
-    return db.getDb();
-  }).then(dbInstance => {
-    if (dbInstance) {
-      console.log('[Startup] Database connection verified');
-    } else {
-      console.warn('[Startup] Database connection failed — some features will be unavailable');
-    }
-  }).catch(err => {
-    console.error('[Startup] Database startup error:', err.message);
-  });
+  // Run migrations, seed admin, then verify connection (non-blocking — server starts regardless)
+  runMigrationsOnStartup()
+    .then(() => seedAdminAccount())
+    .then(() => db.getDb())
+    .then(dbInstance => {
+      if (dbInstance) {
+        console.log('[Startup] Database connection verified');
+      } else {
+        console.warn('[Startup] Database connection failed — some features will be unavailable');
+      }
+    })
+    .catch(err => {
+      console.error('[Startup] Database startup error:', err.message);
+    });
 
   // ── Health Check (must be first, before any body parsers) ────────────────
   app.get("/api/health", (_req: express.Request, res: express.Response) => {

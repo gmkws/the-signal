@@ -315,4 +315,10 @@
 - [x] Create server/services/migrate.ts with runMigrationsOnStartup() using drizzle-orm/mysql2/migrator
 - [x] Call runMigrationsOnStartup() at server startup (non-blocking, before health check)
 - [x] Verify production build compiles and health check returns 200
-- [ ] Push fix to GitHub
+- [x] Push fix to GitHub
+
+## Email Notification + Admin Seed Fixes
+- [x] Investigate email notification code — notifyOwner uses Manus Forge API (not available on Railway)
+- [x] Fix email sending — created server/services/email.ts with nodemailer SMTP, updated notifyOwner to fall back to email when Forge API unavailable
+- [x] Add startup admin seed — created server/services/seed.ts, seeds garrett@gmkwebsolutions.com admin on startup if no admin exists
+- [ ] Push fixes to GitHub

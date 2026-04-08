@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { ENV } from "./env";
+import { sendAdminNotification } from "../services/email";
 
 export type NotificationPayload = {
   title: string;
@@ -68,47 +69,43 @@ export async function notifyOwner(
 ): Promise<boolean> {
   const { title, content } = validatePayload(payload);
 
-  if (!ENV.forgeApiUrl) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Notification service URL is not configured.",
-    });
-  }
+  // Try Manus Forge notification service first (available in Manus sandbox)
+  if (ENV.forgeApiUrl && ENV.forgeApiKey) {
+    const endpoint = buildEndpointUrl(ENV.forgeApiUrl);
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          authorization: `Bearer ${ENV.forgeApiKey}`,
+          "content-type": "application/json",
+          "connect-protocol-version": "1",
+        },
+        body: JSON.stringify({ title, content }),
+      });
 
-  if (!ENV.forgeApiKey) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Notification service API key is not configured.",
-    });
-  }
+      if (response.ok) {
+        return true;
+      }
 
-  const endpoint = buildEndpointUrl(ENV.forgeApiUrl);
-
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        accept: "application/json",
-        authorization: `Bearer ${ENV.forgeApiKey}`,
-        "content-type": "application/json",
-        "connect-protocol-version": "1",
-      },
-      body: JSON.stringify({ title, content }),
-    });
-
-    if (!response.ok) {
       const detail = await response.text().catch(() => "");
       console.warn(
-        `[Notification] Failed to notify owner (${response.status} ${response.statusText})${
+        `[Notification] Forge service failed (${response.status} ${response.statusText})${
           detail ? `: ${detail}` : ""
-        }`
+        } — falling back to email`
       );
-      return false;
+    } catch (error) {
+      console.warn("[Notification] Forge service error, falling back to email:", error);
     }
-
-    return true;
-  } catch (error) {
-    console.warn("[Notification] Error calling notification service:", error);
-    return false;
   }
+
+  // Fall back to email notification (works on Railway and any SMTP-configured environment)
+  const emailSent = await sendAdminNotification(title, content);
+  if (emailSent) {
+    return true;
+  }
+
+  // Both methods unavailable — log the notification so it's at least visible in Railway logs
+  console.log(`[Notification] OWNER NOTIFICATION (no delivery channel configured):\nTitle: ${title}\nContent: ${content}`);
+  return false;
 }
