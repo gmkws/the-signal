@@ -321,4 +321,9 @@
 - [x] Investigate email notification code — notifyOwner uses Manus Forge API (not available on Railway)
 - [x] Fix email sending — created server/services/email.ts with nodemailer SMTP, updated notifyOwner to fall back to email when Forge API unavailable
 - [x] Add startup admin seed — created server/services/seed.ts, seeds garrett@gmkwebsolutions.com admin on startup if no admin exists
-- [ ] Push fixes to GitHub
+- [x] Push fixes to GitHub
+
+## Admin Seed Email Fix
+- [x] Change admin seed email from garrett to gerrit
+- [x] Add smart migration to handle existing wrong account
+- [ ] Push fix to GitHub
