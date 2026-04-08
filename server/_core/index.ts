@@ -38,6 +38,23 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
 
+  // ── Startup diagnostics ─────────────────────────────────────────────────
+  console.log(`[Startup] NODE_ENV=${process.env.NODE_ENV}`);
+  console.log(`[Startup] DATABASE_URL=${process.env.DATABASE_URL ? 'SET (' + process.env.DATABASE_URL.replace(/:([^@]+)@/, ':****@') + ')' : 'NOT SET'}`);
+  console.log(`[Startup] JWT_SECRET=${process.env.JWT_SECRET ? 'SET' : 'NOT SET'}`);
+  console.log(`[Startup] STRIPE_SECRET_KEY=${process.env.STRIPE_SECRET_KEY ? 'SET' : 'NOT SET'}`);
+
+  // Pre-warm database connection (non-blocking — server starts regardless)
+  db.getDb().then(dbInstance => {
+    if (dbInstance) {
+      console.log('[Startup] Database connection verified');
+    } else {
+      console.warn('[Startup] Database connection failed — some features will be unavailable');
+    }
+  }).catch(err => {
+    console.error('[Startup] Database connection error:', err.message);
+  });
+
   // ── Health Check (must be first, before any body parsers) ────────────────
   app.get("/api/health", (_req: express.Request, res: express.Response) => {
     return res.status(200).json({ status: "ok", timestamp: Date.now() });

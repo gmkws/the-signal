@@ -22,17 +22,41 @@ import {
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
+let _dbInitAttempted = false;
 
 export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
-    try {
-      _db = drizzle(process.env.DATABASE_URL);
-    } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
-      _db = null;
+  if (_db) return _db;
+
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) {
+    if (!_dbInitAttempted) {
+      console.error("[Database] DATABASE_URL environment variable is not set!");
+      _dbInitAttempted = true;
     }
+    return null;
   }
-  return _db;
+
+  try {
+    // Log connection attempt (mask password)
+    if (!_dbInitAttempted) {
+      const masked = dbUrl.replace(/:([^@]+)@/, ':****@');
+      console.log(`[Database] Connecting to: ${masked}`);
+    }
+    _db = drizzle(dbUrl);
+    // Test the connection with a simple query
+    await _db.execute(sql`SELECT 1`);
+    if (!_dbInitAttempted) {
+      console.log("[Database] Connection established successfully");
+    }
+    _dbInitAttempted = true;
+    return _db;
+  } catch (error: any) {
+    console.error("[Database] Failed to connect:", error.message || error);
+    // Reset so we can retry on next call
+    _db = null;
+    _dbInitAttempted = true;
+    return null;
+  }
 }
 
 // ── Users ──────────────────────────────────────────────────────────────────

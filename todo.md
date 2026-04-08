@@ -301,4 +301,11 @@
 - [x] Fix vite.ts: use dynamic imports with string concatenation to prevent esbuild from bundling devDependencies
 - [x] Add .node-version (22) and engines field (>=20) for Railway Node version
 - [x] Rebuild and verify dist/index.js has no vite/plugin imports or import.meta.dirname
+- [x] Push fix to GitHub
+
+## Railway Database Connection Fix
+- [x] Add startup logging for DATABASE_URL presence (masked) and connection test
+- [x] Add retry logic to getDb() — if connection fails, retry on next call instead of caching null
+- [x] Add auto-migration via railway.toml buildCommand (pnpm db:push runs during build)
+- [x] Update railway.toml buildCommand to include db:push for schema migration
 - [ ] Push fix to GitHub
