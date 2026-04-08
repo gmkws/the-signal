@@ -308,4 +308,11 @@
 - [x] Add retry logic to getDb() — if connection fails, retry on next call instead of caching null
 - [x] Add auto-migration via railway.toml buildCommand (pnpm db:push runs during build)
 - [x] Update railway.toml buildCommand to include db:push for schema migration
+- [x] Push fix to GitHub
+
+## Railway Migration Fix — Runtime Migration
+- [x] Remove pnpm db:push from railway.toml buildCommand (DATABASE_URL not available at build time)
+- [x] Create server/services/migrate.ts with runMigrationsOnStartup() using drizzle-orm/mysql2/migrator
+- [x] Call runMigrationsOnStartup() at server startup (non-blocking, before health check)
+- [x] Verify production build compiles and health check returns 200
 - [ ] Push fix to GitHub

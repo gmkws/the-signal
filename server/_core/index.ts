@@ -14,6 +14,7 @@ import { storagePut } from "../storage";
 import { sdk } from "./sdk";
 import * as db from "../db";
 import { handleStripeWebhook, createCheckoutSession, createCustomerPortalSession, isStripeConfigured } from "../services/stripe";
+import { runMigrationsOnStartup } from "../services/migrate";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -44,15 +45,17 @@ async function startServer() {
   console.log(`[Startup] JWT_SECRET=${process.env.JWT_SECRET ? 'SET' : 'NOT SET'}`);
   console.log(`[Startup] STRIPE_SECRET_KEY=${process.env.STRIPE_SECRET_KEY ? 'SET' : 'NOT SET'}`);
 
-  // Pre-warm database connection (non-blocking — server starts regardless)
-  db.getDb().then(dbInstance => {
+  // Run migrations then pre-warm connection (non-blocking — server starts regardless)
+  runMigrationsOnStartup().then(() => {
+    return db.getDb();
+  }).then(dbInstance => {
     if (dbInstance) {
       console.log('[Startup] Database connection verified');
     } else {
       console.warn('[Startup] Database connection failed — some features will be unavailable');
     }
   }).catch(err => {
-    console.error('[Startup] Database connection error:', err.message);
+    console.error('[Startup] Database startup error:', err.message);
   });
 
   // ── Health Check (must be first, before any body parsers) ────────────────
