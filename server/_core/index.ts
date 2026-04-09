@@ -45,8 +45,10 @@ async function startServer() {
   console.log(`[Startup] DATABASE_URL=${process.env.DATABASE_URL ? 'SET (' + process.env.DATABASE_URL.replace(/:([^@]+)@/, ':****@') + ')' : 'NOT SET'}`);
   console.log(`[Startup] JWT_SECRET=${process.env.JWT_SECRET ? 'SET' : 'NOT SET'}`);
   console.log(`[Startup] STRIPE_SECRET_KEY=${process.env.STRIPE_SECRET_KEY ? 'SET' : 'NOT SET'}`);
-  console.log(`[Startup] SMTP_HOST=${process.env.SMTP_HOST ? 'SET (' + process.env.SMTP_HOST + ')' : 'NOT SET — email notifications disabled'}`);
-  console.log(`[Startup] ADMIN_EMAIL=${process.env.ADMIN_EMAIL || process.env.SMTP_USER || 'NOT SET'}`);
+  console.log(`[Startup] OPENAI_API_KEY=${process.env.OPENAI_API_KEY ? 'SET' : 'NOT SET — LLM + image generation disabled'}`);
+  console.log(`[Startup] RESEND_API_KEY=${process.env.RESEND_API_KEY ? 'SET' : 'NOT SET — email disabled'}`);
+  console.log(`[Startup] R2_BUCKET_NAME=${process.env.R2_BUCKET_NAME ? 'SET (' + process.env.R2_BUCKET_NAME + ')' : 'NOT SET — image storage disabled'}`);
+  console.log(`[Startup] ADMIN_EMAIL=${process.env.ADMIN_EMAIL || 'NOT SET'}`);
 
   // Run migrations, seed admin, then verify connection (non-blocking — server starts regardless)
   runMigrationsOnStartup()
