@@ -24,15 +24,38 @@ dns.setDefaultResultOrder("ipv4first");
  * emitted instead — the app continues to function normally.
  */
 
-function getTransporter() {
+/**
+ * Resolve the SMTP host to an IPv4 address. Railway containers often lack
+ * IPv6 connectivity, but smtp.office365.com returns AAAA records first,
+ * causing ENETUNREACH. By resolving to IPv4 upfront and passing the raw IP
+ * to nodemailer, we bypass the issue entirely.
+ */
+async function resolveIPv4(hostname: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    dns.lookup(hostname, { family: 4 }, (err, address) => {
+      if (err) {
+        console.warn(`[Email] IPv4 DNS resolution failed for ${hostname}, using hostname as-is: ${err.message}`);
+        resolve(hostname); // Fall back to hostname and let nodemailer try
+      } else {
+        console.log(`[Email] Resolved ${hostname} → ${address} (IPv4)`);
+        resolve(address);
+      }
+    });
+  });
+}
+
+async function createTransporter() {
   const host = ENV.smtpHost;
   if (!host) return null;
 
   const port = parseInt(ENV.smtpPort || "587", 10);
   const secure = ENV.smtpSecure === "true";
 
+  // Resolve to IPv4 to avoid Railway IPv6 ENETUNREACH
+  const resolvedHost = await resolveIPv4(host);
+
   return nodemailer.createTransport({
-    host,
+    host: resolvedHost,
     port,
     secure,                    // false for port 587 (STARTTLS), true for port 465 (implicit TLS)
     requireTLS: !secure,       // Force STARTTLS upgrade on port 587 (Office 365 requirement)
@@ -42,16 +65,12 @@ function getTransporter() {
     },
     tls: {
       minVersion: "TLSv1.2",  // Office 365 requires TLS 1.2+
-    },
-    // Force IPv4 DNS lookup — Railway lacks IPv6 connectivity and
-    // smtp.office365.com returns AAAA records first, causing ENETUNREACH.
-    dnsLookup: (hostname: string, options: any, callback: Function) => {
-      dns.lookup(hostname, { family: 4 }, callback as any);
+      servername: host,        // Use original hostname for TLS certificate verification
     },
     connectionTimeout: 10000,  // 10s connection timeout
     greetingTimeout: 10000,    // 10s greeting timeout
     socketTimeout: 15000,      // 15s socket timeout
-  } as any);
+  });
 }
 
 export interface EmailPayload {
@@ -66,7 +85,7 @@ export interface EmailPayload {
  * sending fails. Never throws — callers should handle the false case gracefully.
  */
 export async function sendEmail(payload: EmailPayload): Promise<boolean> {
-  const transporter = getTransporter();
+  const transporter = await createTransporter();
 
   if (!transporter) {
     console.log(
