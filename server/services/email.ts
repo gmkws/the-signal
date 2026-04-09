@@ -28,17 +28,18 @@ function getTransporter() {
   return nodemailer.createTransport({
     host,
     port,
-    secure,
+    secure,                    // false for port 587 (STARTTLS), true for port 465 (implicit TLS)
+    requireTLS: !secure,       // Force STARTTLS upgrade on port 587 (Office 365 requirement)
     auth: {
       user: ENV.smtpUser,
       pass: ENV.smtpPass,
     },
-    // Office 365 requires STARTTLS on port 587; this ensures the TLS
-    // upgrade negotiates correctly even on strict environments.
     tls: {
-      ciphers: "SSLv3",
-      rejectUnauthorized: true,
+      minVersion: "TLSv1.2",  // Office 365 requires TLS 1.2+
     },
+    connectionTimeout: 10000,  // 10s connection timeout
+    greetingTimeout: 10000,    // 10s greeting timeout
+    socketTimeout: 15000,      // 15s socket timeout
   });
 }
 
@@ -77,6 +78,7 @@ export async function sendEmail(payload: EmailPayload): Promise<boolean> {
     return true;
   } catch (error: any) {
     console.error(`[Email] Failed to send to ${payload.to}: ${error.message}`);
+    console.error(`[Email] SMTP config: host=${ENV.smtpHost}, port=${ENV.smtpPort}, secure=${ENV.smtpSecure}, user=${ENV.smtpUser}`);
     return false;
   }
 }
