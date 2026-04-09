@@ -1,5 +1,11 @@
 import nodemailer from "nodemailer";
+import dns from "dns";
 import { ENV } from "../_core/env";
+
+// Force Node.js DNS to resolve IPv4 first — Railway containers often lack
+// IPv6 connectivity, but smtp.office365.com returns AAAA records first,
+// causing ENETUNREACH errors.
+dns.setDefaultResultOrder("ipv4first");
 
 /**
  * Email service for The Signal.
