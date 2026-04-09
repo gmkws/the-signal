@@ -43,10 +43,15 @@ function getTransporter() {
     tls: {
       minVersion: "TLSv1.2",  // Office 365 requires TLS 1.2+
     },
+    // Force IPv4 DNS lookup — Railway lacks IPv6 connectivity and
+    // smtp.office365.com returns AAAA records first, causing ENETUNREACH.
+    dnsLookup: (hostname: string, options: any, callback: Function) => {
+      dns.lookup(hostname, { family: 4 }, callback as any);
+    },
     connectionTimeout: 10000,  // 10s connection timeout
     greetingTimeout: 10000,    // 10s greeting timeout
     socketTimeout: 15000,      // 15s socket timeout
-  });
+  } as any);
 }
 
 export interface EmailPayload {
