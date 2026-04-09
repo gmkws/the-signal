@@ -9,13 +9,8 @@ export const ENV = {
   // Stripe (optional — gracefully degrades when not set)
   stripeSecretKey: process.env.STRIPE_SECRET_KEY ?? "",
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET ?? "",
-  // Email / SMTP (optional — gracefully degrades when not set)
-  // Configured for Office 365: smtp.office365.com, port 587, STARTTLS
-  smtpHost: process.env.SMTP_HOST ?? "",
-  smtpPort: process.env.SMTP_PORT ?? "587",
-  smtpSecure: process.env.SMTP_SECURE ?? "",
-  smtpUser: process.env.SMTP_USER ?? "",
-  smtpPass: process.env.SMTP_PASS ?? "",
-  smtpFrom: process.env.SMTP_FROM ?? "",
+  // Email via Resend (optional — gracefully degrades when not set)
+  resendApiKey: process.env.RESEND_API_KEY ?? "",
+  emailFrom: process.env.EMAIL_FROM ?? "",
   adminEmail: process.env.ADMIN_EMAIL ?? "",
 };

@@ -285,16 +285,12 @@ The LLM is accessed through `server/_core/llm.ts`:
 | `STRIPE_PRICE_MANAGED` | Stripe Price ID for Managed tier | `price_...` |
 | `STRIPE_PRICE_PREMIUM` | Stripe Price ID for Premium tier | `price_...` |
 
-### Email Notifications (Optional — Office 365 SMTP)
+### Email Notifications (Optional — Resend API)
 
 | Variable | Purpose | Format |
 |---|---|---|
-| `SMTP_HOST` | SMTP server hostname | `smtp.office365.com` |
-| `SMTP_PORT` | SMTP port | `587` (STARTTLS — Office 365 default) |
-| `SMTP_SECURE` | Use implicit TLS (port 465 only) | Omit or leave empty for port 587 |
-| `SMTP_USER` | Office 365 email address | `you@yourdomain.com` |
-| `SMTP_PASS` | Office 365 password or app password | Password string |
-| `SMTP_FROM` | From address (must match a verified O365 sender) | `you@yourdomain.com` |
+| `RESEND_API_KEY` | Resend API key for transactional email | `re_...` |
+| `EMAIL_FROM` | From address (must be on a verified Resend domain) | `noreply@notify.gmkwebsolutions.com` |
 | `ADMIN_EMAIL` | Where to receive admin notifications | `admin@yourdomain.com` |
 
 ### Meta / Social Media
