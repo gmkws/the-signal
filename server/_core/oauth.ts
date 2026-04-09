@@ -3,6 +3,8 @@ import type { Express, Request, Response } from "express";
 import * as db from "../db";
 import { getSessionCookieOptions } from "./cookies";
 import { sdk } from "./sdk";
+import { sendEmail } from "../services/email";
+import { ENV } from "./env";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 
@@ -142,9 +144,31 @@ export function registerOAuthRoutes(app: Express) {
 
       await db.setPasswordResetToken(user.openId, resetToken, resetExpires);
 
-      // In production, this would send an email. For now, log it.
-      console.log(`[Auth] Password reset token for ${email}: ${resetToken}`);
-      // TODO: Integrate email sending service (SendGrid, etc.)
+      // Build the reset link — use VITE_API_URL (production domain) or fall back to request origin
+      const baseUrl = process.env.VITE_API_URL || `${req.protocol}://${req.get("host")}`;
+      const resetLink = `${baseUrl}/reset-password?token=${resetToken}`;
+
+      const emailSent = await sendEmail({
+        to: email.toLowerCase().trim(),
+        subject: "[The Signal] Password Reset Request",
+        text: `You requested a password reset.\n\nClick this link to reset your password (expires in 1 hour):\n${resetLink}\n\nIf you did not request this, you can safely ignore this email.`,
+        html: `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background: #0d1117; color: #e6edf3; padding: 20px; border-radius: 8px;">
+              <h2 style="margin: 0 0 16px; color: #00e5cc;">Password Reset</h2>
+              <p style="margin: 0 0 16px; line-height: 1.6;">You requested a password reset for your account on The Signal.</p>
+              <a href="${resetLink}" style="display: inline-block; background: #00e5cc; color: #0d1117; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: bold;">Reset My Password</a>
+              <p style="margin: 16px 0 0; font-size: 13px; color: #8b949e;">This link expires in 1 hour. If you did not request this, you can safely ignore this email.</p>
+              <hr style="border: none; border-top: 1px solid #30363d; margin: 20px 0;" />
+              <p style="margin: 0; font-size: 12px; color: #8b949e;">The Signal by GMK Web Solutions</p>
+            </div>
+          </div>
+        `,
+      });
+
+      if (!emailSent) {
+        console.warn(`[Auth] Password reset email could not be sent to ${email} — token: ${resetToken}`);
+      }
 
       return res.json({ success: true, message: "If an account exists with that email, a reset link has been sent." });
     } catch (error: any) {
