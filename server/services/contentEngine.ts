@@ -284,11 +284,30 @@ Important rules:
  * Generate an image for a social media post
  */
 export async function generatePostImage(prompt: string): Promise<string> {
-  const enhancedPrompt = `Professional social media post image. Modern, clean design with dark navy blue background and cyan/teal accents. ${prompt}. High quality, suitable for Facebook and Instagram. No text overlay.`;
+  // Keep the prompt concise — DALL-E 3 works best with shorter, focused descriptions
+  const trimmedPrompt = prompt.length > 500 ? prompt.substring(0, 500) : prompt;
+  const enhancedPrompt = `Professional social media graphic. Modern, clean design with dark navy blue background and cyan/teal accents. ${trimmedPrompt}. High quality, no text or words in the image.`;
 
-  const result = await generateImage({ prompt: enhancedPrompt });
-  if (!result.url) throw new Error("Image generation returned no URL");
-  return result.url;
+  console.log(`[ImageGen] Generating image with prompt: ${enhancedPrompt.substring(0, 100)}...`);
+
+  // Retry up to 2 times on transient 500 errors
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const result = await generateImage({ prompt: enhancedPrompt });
+      if (!result.url) throw new Error("Image generation returned no URL");
+      return result.url;
+    } catch (err: any) {
+      lastError = err;
+      if (err.message?.includes("500") && attempt < 2) {
+        console.warn(`[ImageGen] DALL-E 500 error, retrying (attempt ${attempt + 1}/3)...`);
+        await new Promise(r => setTimeout(r, 2000 * (attempt + 1))); // Backoff: 2s, 4s
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError;
 }
 
 // ── Batch Generation for Fill Schedule ────────────────────────────────────
