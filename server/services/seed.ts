@@ -39,7 +39,12 @@ export async function seedAdminAccount(): Promise<void> {
       .limit(1);
 
     if (existingCorrectAdmin.length > 0) {
-      console.log(`[Seed] Admin account with correct email (${correctEmail}) already exists — skipping seed`);
+      // Ensure the account has admin role (may have been reset to "user" during password reset)
+      await db
+        .update(users)
+        .set({ role: "admin" })
+        .where(eq(users.email, correctEmail));
+      console.log(`[Seed] Admin account (${correctEmail}) exists — ensured role is admin`);
       return;
     }
 
