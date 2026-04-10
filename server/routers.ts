@@ -379,6 +379,7 @@ const aiRouter = router({
           content: fallback.fallbackContent,
           contentType: input.contentType,
           suggestedImagePrompt: `Professional social media graphic for ${brand.name}`,
+          overlayHeadline: brand.name,
           isFallback: true,
         };
       }

@@ -61,6 +61,10 @@ export default function AdminAI() {
       setGeneratedContent(data.content);
       setImagePrompt(data.suggestedImagePrompt);
       setGeneratedContentType(data.contentType);
+      // Auto-fill the overlay headline from the LLM's short headline
+      if (data.overlayHeadline) {
+        setOverlayHeadline(data.overlayHeadline);
+      }
       toast.success("Content generated!");
     },
     onError: (e) => toast.error(`Generation failed: ${e.message}`),
@@ -130,7 +134,7 @@ export default function AdminAI() {
       brandId: parseInt(selectedBrand),
       prompt: imagePrompt,
       overlayText: {
-        headline: overlayHeadline || generatedContent.split("\n")[0]?.substring(0, 60) || undefined,
+        headline: overlayHeadline || undefined,
         ctaText: overlayCta || undefined,
         brandName: brand?.name || "GMK Web Solutions",
         hashtags: overlayHashtags ? overlayHashtags.split(" ").filter(Boolean) : undefined,

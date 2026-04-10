@@ -62,12 +62,15 @@ export interface GeneratedContent {
   content: string;
   contentType: ContentFormat;
   suggestedImagePrompt: string;
+  overlayHeadline: string; // Short 3-8 word headline for image overlay text
 }
 
 const FORMAT_PROMPTS: Record<ContentFormat, string> = {
   hey_tony: `Write a value-first tip post in the "Hey Tony" style. "Hey Tony" is the NAME of this content format — it is NOT a greeting and must NOT appear anywhere in the post. Do not open with "Hey Tony", "Hey,", or any salutation.
 
-This format speaks directly to a small business owner as if you're a knowledgeable friend giving them a free consult. Pick ONE specific, actionable tip from the following topic areas — rotate through them and do NOT default to SEO every time:
+This format speaks directly to a small business owner as if you're a knowledgeable friend giving them a free consult over coffee. The core idea: you're giving away genuinely useful advice that most agencies would charge a consultation fee for.
+
+Pick ONE specific, actionable tip from the following topic areas — rotate through them and do NOT default to SEO every time:
 - Website speed and performance (Core Web Vitals, image compression, hosting)
 - Google Business Profile optimization and local map pack visibility
 - AI automation for small business (follow-up sequences, chatbots, scheduling)
@@ -80,11 +83,11 @@ This format speaks directly to a small business owner as if you're a knowledgeab
 - Photography and visual content for local businesses
 
 Structure:
-1. Open with a bold, specific hook — a surprising stat, a blunt truth, or a relatable pain point. Do NOT start with a question.
-2. Deliver the actual tip in 2–3 short paragraphs. Give away the real advice — don't tease it.
+1. Open with a bold, specific hook — a surprising stat, a blunt truth, or a relatable pain point. Do NOT start with a question. Example hooks: "Your website loads in 6 seconds. Your competitor's loads in 2. Guess who gets the call.", "Most small businesses lose 40% of their leads because of one missing button."
+2. Deliver the actual tip in 2–3 short paragraphs. Give away the REAL advice — specific steps they can take TODAY. Don't be vague. Name real tools, real numbers, real actions. This is what makes the format valuable — you're not teasing, you're teaching.
 3. Close with: "Have questions? Feel free to DM or call. Answers don't cost anything, but they can pay off immensely."
 
-Tone: Direct, conversational, zero fluff. Like a trusted expert, not a marketer.`,
+Tone: Direct, conversational, zero fluff. Like a trusted expert who genuinely wants to help, not a marketer trying to sell. Think barbershop advice from someone who actually knows their stuff.`,
 
   hook_solve: `Create a "Hook & Solve" format post. This uses a highly visual, scannable format that grabs attention instantly and walks the reader through a specific problem and the exact solution. Structure: 1) Hook with a relatable problem statement 2) Explain why it matters 3) Present the clear solution 4) End with a CTA. Use short paragraphs and line breaks for readability.`,
 
@@ -254,12 +257,16 @@ Important rules:
               type: "string",
               description: "The complete social media post text, ready to publish",
             },
+            overlayHeadline: {
+              type: "string",
+              description: "A short, punchy headline (3-8 words MAX) for the social media image overlay. This text appears on the graphic, so keep it extremely concise. Examples: 'Speed Kills — Is Yours Fast?', 'Your Site Is Leaking Leads', 'Print Meets Digital Power'",
+            },
             imagePrompt: {
               type: "string",
-              description: "A detailed prompt for generating an accompanying image. Should describe a professional, modern visual that complements the post content. Use a dark navy/tech blue color scheme.",
+              description: "A detailed prompt for generating an accompanying background image. Should describe a professional, modern visual scene that complements the post. Use a dark navy/tech blue color scheme. Do NOT include any text, words, or typography in the image.",
             },
           },
-          required: ["postContent", "imagePrompt"],
+          required: ["postContent", "overlayHeadline", "imagePrompt"],
           additionalProperties: false,
         },
       },
@@ -277,6 +284,7 @@ Important rules:
     content: parsed.postContent,
     contentType: finalContentType,
     suggestedImagePrompt: parsed.imagePrompt,
+    overlayHeadline: parsed.overlayHeadline || "",
   };
 }
 
@@ -322,6 +330,7 @@ export interface BatchGeneratedPost {
   contentType: ContentFormat;
   scheduledAt: Date;
   suggestedImagePrompt: string;
+  overlayHeadline: string;      // Short headline for image overlay text
   imageUrl?: string;            // Generated image URL (undefined if generation failed)
   imageGenerationFailed?: boolean;
 }
@@ -414,6 +423,7 @@ export async function generateBatch(
         contentType: generated.contentType,
         scheduledAt: slot.scheduledAt,
         suggestedImagePrompt: generated.suggestedImagePrompt,
+        overlayHeadline: generated.overlayHeadline,
         imageUrl,
         imageGenerationFailed,
       });
@@ -425,6 +435,7 @@ export async function generateBatch(
         contentType: slot.contentType,
         scheduledAt: slot.scheduledAt,
         suggestedImagePrompt: `Professional social media graphic for ${brandName}`,
+        overlayHeadline: brandName,
         imageGenerationFailed: true,
       });
     }
