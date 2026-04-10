@@ -99,18 +99,19 @@ export function generateOverlaySVG(config: OverlayConfig): string {
 
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`;
 
-  // Background gradient
+  // Background gradient + blur filter for background image
   svg += `<defs>
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" style="stop-color:${style.bgGradient[0]}" />
       <stop offset="100%" style="stop-color:${style.bgGradient[1]}" />
     </linearGradient>
+    <filter id="bgBlur"><feGaussianBlur stdDeviation="4" /></filter>
   </defs>`;
   svg += `<rect width="${width}" height="${height}" fill="url(#bg)" />`;
 
-  // If we have a background image, overlay it
+  // If we have a background image, overlay it with subtle blur for depth
   if (config.backgroundUrl) {
-    svg += `<image href="${esc(config.backgroundUrl)}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="xMidYMid slice" />`;
+    svg += `<image href="${esc(config.backgroundUrl)}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="xMidYMid slice" filter="url(#bgBlur)" />`;
     // Dark overlay for text readability
     svg += `<rect width="${width}" height="${height}" fill="rgba(0,0,0,${style.overlayOpacity})" />`;
   }
