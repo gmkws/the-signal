@@ -40,7 +40,7 @@ const STYLE_CONFIGS = {
     ctaBg: "#00d4ff",
     ctaText: "#0a1628",
     fontFamily: "Arial, sans-serif",
-    overlayOpacity: 0.7,
+    overlayOpacity: 0.45,
   },
   bold: {
     bgGradient: ["#1a0a2e", "#3d1a78"],
@@ -50,7 +50,7 @@ const STYLE_CONFIGS = {
     ctaBg: "#ff6b35",
     ctaText: "#ffffff",
     fontFamily: "Arial Black, sans-serif",
-    overlayOpacity: 0.75,
+    overlayOpacity: 0.5,
   },
   minimal: {
     bgGradient: ["#f8f9fa", "#e9ecef"],
@@ -60,7 +60,7 @@ const STYLE_CONFIGS = {
     ctaBg: "#2563eb",
     ctaText: "#ffffff",
     fontFamily: "Helvetica, Arial, sans-serif",
-    overlayOpacity: 0.85,
+    overlayOpacity: 0.7,
   },
   vibrant: {
     bgGradient: ["#0f172a", "#1e3a5f"],
@@ -70,7 +70,7 @@ const STYLE_CONFIGS = {
     ctaBg: "#22d3ee",
     ctaText: "#0f172a",
     fontFamily: "Arial, sans-serif",
-    overlayOpacity: 0.65,
+    overlayOpacity: 0.4,
   },
   dark: {
     bgGradient: ["#000000", "#1a1a2e"],
@@ -80,7 +80,7 @@ const STYLE_CONFIGS = {
     ctaBg: "#00d4ff",
     ctaText: "#000000",
     fontFamily: "Arial, sans-serif",
-    overlayOpacity: 0.8,
+    overlayOpacity: 0.55,
   },
 };
 
@@ -126,22 +126,28 @@ export function generateOverlaySVG(config: OverlayConfig): string {
     yPos += 60;
   }
 
-  // Headline (large, main text)
+  // Headline (large, main text) — max 5 lines to prevent overflow
   if (config.headline) {
     const words = config.headline.split(" ");
     const lines: string[] = [];
     let currentLine = "";
     const maxCharsPerLine = config.style === "bold" ? 18 : 22;
+    const maxLines = 5;
 
     for (const word of words) {
       if ((currentLine + " " + word).trim().length > maxCharsPerLine) {
         if (currentLine) lines.push(currentLine.trim());
+        if (lines.length >= maxLines) break;
         currentLine = word;
       } else {
         currentLine = (currentLine + " " + word).trim();
       }
     }
-    if (currentLine) lines.push(currentLine.trim());
+    if (currentLine && lines.length < maxLines) lines.push(currentLine.trim());
+    // Add ellipsis to last line if text was truncated
+    if (lines.length === maxLines && words.length > lines.join(" ").split(" ").length) {
+      lines[maxLines - 1] = lines[maxLines - 1].replace(/\.?\s*$/, "...");
+    }
 
     const fontSize = config.style === "bold" ? 56 : 48;
     const lineHeight = fontSize * 1.3;
