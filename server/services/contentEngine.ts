@@ -288,10 +288,16 @@ Important rules:
   };
 }
 
+export interface PostImageResult {
+  url: string;
+  base64?: string; // raw base64 PNG data (available for embedding in SVGs)
+}
+
 /**
- * Generate an image for a social media post
+ * Generate an image for a social media post.
+ * Returns URL (always) and base64 data (when available, for SVG embedding).
  */
-export async function generatePostImage(prompt: string): Promise<string> {
+export async function generatePostImage(prompt: string): Promise<PostImageResult> {
   // Keep the prompt concise — DALL-E 3 works best with shorter, focused prompts
   const trimmedPrompt = prompt.length > 500 ? prompt.substring(0, 500) : prompt;
 
@@ -303,7 +309,7 @@ export async function generatePostImage(prompt: string): Promise<string> {
     try {
       const result = await generateImage({ prompt: trimmedPrompt, quality: "hd" });
       if (!result.url) throw new Error("Image generation returned no URL");
-      return result.url;
+      return { url: result.url, base64: result.base64 };
     } catch (err: any) {
       lastError = err;
       if (err.message?.includes("500") && attempt < 2) {
@@ -314,7 +320,7 @@ export async function generatePostImage(prompt: string): Promise<string> {
       throw err;
     }
   }
-  throw lastError;
+  throw lastError!;
 }
 
 // ── Batch Generation for Fill Schedule ────────────────────────────────────
@@ -410,7 +416,8 @@ export async function generateBatch(
       let imageGenerationFailed = false;
       if (generateImages && generated.suggestedImagePrompt) {
         try {
-          imageUrl = await generatePostImage(generated.suggestedImagePrompt);
+          const imgResult = await generatePostImage(generated.suggestedImagePrompt);
+          imageUrl = imgResult.url;
         } catch (imgErr) {
           console.warn(`[BatchGenerate] Image generation failed for slot ${slot.scheduledAt.toISOString()}:`, imgErr);
           imageGenerationFailed = true;

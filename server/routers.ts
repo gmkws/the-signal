@@ -400,8 +400,8 @@ const aiRouter = router({
   generateImage: protectedProcedure
     .input(z.object({ prompt: z.string().min(1) }))
     .mutation(async ({ input }) => {
-      const imageUrl = await generatePostImage(input.prompt);
-      return { imageUrl };
+      const result = await generatePostImage(input.prompt);
+      return { imageUrl: result.url };
     }),
 
   generateSmartImage: protectedProcedure
@@ -422,17 +422,21 @@ const aiRouter = router({
       if (!brand) throw new TRPCError({ code: "NOT_FOUND", message: "Brand not found" });
 
       // Generate AI background image — prompt sanitization happens downstream
-      let bgImageUrl: string;
+      let bgImageUrl = "";
+      let bgBase64 = "";
       try {
-        bgImageUrl = await generatePostImage(input.prompt);
+        const imgResult = await generatePostImage(input.prompt);
+        bgImageUrl = imgResult.url;
+        bgBase64 = imgResult.base64 || "";
       } catch (err: any) {
-        // Use a solid gradient fallback
-        bgImageUrl = "";
+        // Use a solid gradient fallback (no background image)
+        console.warn("[SmartImage] DALL-E failed, using gradient fallback:", err.message);
       }
 
       // Render composite image with text overlay
+      // Pass base64 so the SVG can embed the image inline (external URLs blocked in <img> tags)
       const result = await renderSmartImage({
-        backgroundUrl: bgImageUrl,
+        backgroundUrl: bgBase64 ? `data:image/png;base64,${bgBase64}` : bgImageUrl,
         headline: input.overlayText?.headline || "",
         subtext: input.overlayText?.subtext || "",
         ctaText: input.overlayText?.ctaText || "",

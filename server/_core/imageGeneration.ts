@@ -21,6 +21,7 @@ export type GenerateImageOptions = {
 
 export type GenerateImageResponse = {
   url?: string;
+  base64?: string; // raw base64 PNG data for embedding in SVGs
 };
 
 /**
@@ -87,5 +88,5 @@ export async function generateImage(
     "image/png"
   );
 
-  return { url };
+  return { url, base64: base64Data };
 }
