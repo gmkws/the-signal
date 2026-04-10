@@ -259,11 +259,11 @@ Important rules:
             },
             overlayHeadline: {
               type: "string",
-              description: "A short, punchy headline (3-8 words MAX) for the social media image overlay. This text appears on the graphic, so keep it extremely concise. Examples: 'Speed Kills — Is Yours Fast?', 'Your Site Is Leaking Leads', 'Print Meets Digital Power'",
+              description: "A scroll-stopping headline for the social media image (4-7 words MAX). Must create tension, curiosity, or urgency — NOT a generic label. Bad: 'Master Your Google Profile'. Good: 'Your Competitors Already Did This'. Bad: 'Website Speed Matters'. Good: 'Six Seconds. That's All You Get.' Use dashes, numbers, or provocative statements.",
             },
             imagePrompt: {
               type: "string",
-              description: "A detailed prompt for generating an accompanying background image. Should describe a professional, modern visual scene that complements the post. Use a dark navy/tech blue color scheme. Do NOT include any text, words, or typography in the image.",
+              description: "A vivid scene description for an AI-generated background photo. Describe a SPECIFIC real-world scene with lighting, mood, and composition details. Example: 'Close-up of hands typing on a MacBook in a modern coffee shop, warm golden hour light streaming through windows, shallow depth of field, professional photography style'. Avoid abstract concepts — describe what the CAMERA SEES.",
             },
           },
           required: ["postContent", "overlayHeadline", "imagePrompt"],
@@ -292,17 +292,16 @@ Important rules:
  * Generate an image for a social media post
  */
 export async function generatePostImage(prompt: string): Promise<string> {
-  // Keep the prompt concise — DALL-E 3 works best with shorter, focused descriptions
+  // Keep the prompt concise — DALL-E 3 works best with shorter, focused prompts
   const trimmedPrompt = prompt.length > 500 ? prompt.substring(0, 500) : prompt;
-  const enhancedPrompt = `Professional social media graphic. Modern, clean design with dark navy blue background and cyan/teal accents. ${trimmedPrompt}. High quality, no text or words in the image.`;
 
-  console.log(`[ImageGen] Generating image with prompt: ${enhancedPrompt.substring(0, 100)}...`);
+  console.log(`[ImageGen] Generating image with prompt: ${trimmedPrompt.substring(0, 100)}...`);
 
   // Retry up to 2 times on transient 500 errors
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const result = await generateImage({ prompt: enhancedPrompt });
+      const result = await generateImage({ prompt: trimmedPrompt, quality: "hd" });
       if (!result.url) throw new Error("Image generation returned no URL");
       return result.url;
     } catch (err: any) {

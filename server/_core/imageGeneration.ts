@@ -28,12 +28,13 @@ export type GenerateImageResponse = {
  * Appends explicit instructions to avoid any text, letters, or words.
  */
 function sanitizePrompt(prompt: string): string {
-  const noTextSuffix = ". IMPORTANT: Do not include any text, words, letters, numbers, watermarks, or typography in the image. The image should be purely visual with no written content whatsoever.";
   // Remove any explicit text rendering instructions from the original prompt
   const cleaned = prompt
-    .replace(/\b(with text|with words|with letters|saying|that says|with the text)\b/gi, "")
+    .replace(/\b(with text|with words|with letters|saying|that says|with the text|no text[^.]*)\b/gi, "")
+    .replace(/\s+/g, " ")
     .trim();
-  return cleaned + noTextSuffix;
+  // One concise no-text instruction at the end
+  return `${cleaned}. No text, letters, or watermarks in the image.`;
 }
 
 export async function generateImage(

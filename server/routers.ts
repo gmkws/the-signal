@@ -421,11 +421,10 @@ const aiRouter = router({
       const brand = await db.getBrandById(input.brandId);
       if (!brand) throw new TRPCError({ code: "NOT_FOUND", message: "Brand not found" });
 
-      // Generate AI background image (no text in prompt)
-      const bgPrompt = `${input.prompt}. Professional social media background image. No text, no words, no letters, no watermarks. Clean visual composition suitable for text overlay. High quality, vibrant colors.`;
+      // Generate AI background image — prompt sanitization happens downstream
       let bgImageUrl: string;
       try {
-        bgImageUrl = await generatePostImage(bgPrompt);
+        bgImageUrl = await generatePostImage(input.prompt);
       } catch (err: any) {
         // Use a solid gradient fallback
         bgImageUrl = "";
