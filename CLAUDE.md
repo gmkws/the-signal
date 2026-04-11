@@ -66,6 +66,11 @@ location selector dialog, following the same layout as the Meta OAuth card.
 | `R2_*` | Cloudflare R2 image storage |
 | `STRIPE_SECRET_KEY` | Stripe billing (optional) |
 
+## Future Features / Pending Integrations
+
+### 321 Trailers — Inventory Integration
+Pending development. Waiting on the specific name of the client's dealer management software to determine if we can use a REST API, an XML/CSV inventory feed, or if web scraping is required to pull trailer inventory into The Signal's auto-posting engine.
+
 ## Focus Bug (resolved in working tree)
 The `formatForDisplay` helper in `client/src/components/PostPreviewPanel.tsx`
 used `key={i}` (index) for spans. When the hashtag count changed mid-typing,

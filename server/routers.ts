@@ -1611,8 +1611,8 @@ const gbpRouter = router({
    * Returns the Google OAuth URL for the connect popup.
    * The state param carries the brandId so the callback can close correctly.
    */
-  getOAuthUrl: adminProcedure
-    .input(z.object({ brandId: z.number(), redirectUri: z.string().url() }))
+  getOAuthUrl: protectedProcedure
+    .input(z.object({ brandId: z.number().optional().default(0), redirectUri: z.string().url() }))
     .query(({ input }) => {
       const clientId = process.env.GOOGLE_CLIENT_ID ?? "";
       if (!clientId) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "GOOGLE_CLIENT_ID not configured" });
@@ -1624,9 +1624,9 @@ const gbpRouter = router({
    * Exchange the authorization code for OAuth tokens and return the list of
    * GBP locations the user manages so they can pick one.
    */
-  handleCallback: adminProcedure
+  handleCallback: protectedProcedure
     .input(z.object({
-      brandId: z.number(),
+      brandId: z.number().optional(),
       code: z.string().min(1),
       redirectUri: z.string().url(),
     }))
@@ -1662,7 +1662,7 @@ const gbpRouter = router({
   /**
    * Save the selected GBP location as a connected social account.
    */
-  connect: adminProcedure
+  connect: protectedProcedure
     .input(z.object({
       brandId: z.number(),
       locationName: z.string().min(1),
@@ -1671,7 +1671,14 @@ const gbpRouter = router({
       refreshToken: z.string().nullable(),
       expiresAt: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // Clients can only connect GBP to their own brands
+      if (ctx.user.role !== "admin") {
+        const brands = await db.getBrandsByClientUserId(ctx.user.id);
+        if (!brands.find((b: any) => b.id === input.brandId)) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+      }
       const existing = await db.getSocialAccountsByBrandId(input.brandId);
       const gbpAccount = existing.find((a: any) => a.platform === "google_business");
 

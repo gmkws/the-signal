@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -14,7 +15,7 @@ import { toast } from "sonner";
 import { useLocation } from "wouter";
 import {
   Building2, Mic2, ShoppingBag, Share2, Calendar, CheckCircle2,
-  ChevronRight, ChevronLeft, Bot, Send, Loader2, Sparkles, X, Plus
+  ChevronRight, ChevronLeft, Bot, Send, Loader2, Sparkles, X, Plus, MapPin
 } from "lucide-react";
 
 const STEPS = [
@@ -73,6 +74,13 @@ export default function Onboarding() {
   const [postsPerDay, setPostsPerDay] = useState(1);
   const [autoPost, setAutoPost] = useState(false);
 
+  // GBP state (tokens + location collected during step 4, saved after brand creation)
+  const [gbpLocationOpen, setGbpLocationOpen] = useState(false);
+  const [gbpLocations, setGbpLocations] = useState<Array<{ name: string; title: string; accountName: string }>>([]);
+  const [gbpPendingTokens, setGbpPendingTokens] = useState<{ accessToken: string; refreshToken: string | null; expiresAt: string } | null>(null);
+  const [gbpPendingLocation, setGbpPendingLocation] = useState<{ name: string; title: string } | null>(null);
+  const [gbpConnecting, setGbpConnecting] = useState(false);
+
   // AI assistant state
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
@@ -84,6 +92,34 @@ export default function Onboarding() {
   const saveStep = trpc.onboarding.saveStep.useMutation();
   const complete = trpc.onboarding.complete.useMutation();
   const askAssistant = trpc.onboarding.askAssistant.useMutation();
+
+  // GBP OAuth — no brandId needed yet; brand is created at the end of onboarding
+  const getGbpOAuthUrl = trpc.gbp.getOAuthUrl.useQuery(
+    { redirectUri: window.location.origin + "/api/google/callback" },
+    { enabled: false }
+  );
+
+  const handleGbpCallback = trpc.gbp.handleCallback.useMutation({
+    onSuccess: (data) => {
+      setGbpPendingTokens({ accessToken: data.accessToken, refreshToken: data.refreshToken, expiresAt: data.expiresAt });
+      setGbpLocations(data.locations);
+      setGbpConnecting(false);
+      if (data.locations.length === 0) {
+        toast.error("No Google Business locations found on this account");
+      } else if (data.locations.length === 1) {
+        setGbpPendingLocation(data.locations[0]);
+        toast.success(`Google Business connected: ${data.locations[0].title}`);
+      } else {
+        setGbpLocationOpen(true);
+      }
+    },
+    onError: (e) => {
+      setGbpConnecting(false);
+      toast.error(`GBP connect failed: ${e.message}`);
+    },
+  });
+
+  const gbpConnect = trpc.gbp.connect.useMutation();
   const { data: onboardingState } = trpc.onboarding.getState.useQuery(undefined, {
     enabled: isAuthenticated,
   });
@@ -127,6 +163,45 @@ export default function Onboarding() {
     }
   };
 
+  // Listen for the GBP OAuth popup result
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      const data = event.data;
+      if (!data || typeof data !== "object") return;
+      if (data.type === "GBP_OAUTH_CODE" && data.code) {
+        handleGbpCallback.mutate({
+          code: data.code,
+          redirectUri: data.redirectUri || (window.location.origin + "/api/google/callback"),
+        });
+      } else if (data.type === "GBP_OAUTH_ERROR") {
+        setGbpConnecting(false);
+        toast.error(`Google OAuth error: ${data.error}`);
+      }
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, [handleGbpCallback]);
+
+  const handleGbpOAuthClick = async () => {
+    setGbpConnecting(true);
+    try {
+      const result = await getGbpOAuthUrl.refetch();
+      const url = result.data?.url;
+      if (!url) throw new Error("Could not get OAuth URL");
+      window.open(url, "gbp_oauth", "width=600,height=700,noopener");
+    } catch (e: any) {
+      setGbpConnecting(false);
+      toast.error(`Failed to start Google OAuth: ${e.message}`);
+    }
+  };
+
+  const handleGbpSelectLocation = useCallback((loc: { name: string; title: string }, tokens: { accessToken: string; refreshToken: string | null; expiresAt: string }) => {
+    setGbpPendingLocation(loc);
+    setGbpLocationOpen(false);
+    toast.success(`Google Business connected: ${loc.title}`);
+  }, []);
+
   const handleComplete = async () => {
     if (!brandName.trim()) {
       toast.error("Brand name is required");
@@ -135,7 +210,7 @@ export default function Onboarding() {
     }
     setIsCompleting(true);
     try {
-      await complete.mutateAsync({
+      const result = await complete.mutateAsync({
         brandName,
         industry: industry || undefined,
         website: website || undefined,
@@ -149,6 +224,22 @@ export default function Onboarding() {
         postsPerDay,
         autoPost,
       });
+      // If the user connected GBP during step 4, save it now that we have a brandId
+      if (gbpPendingLocation && gbpPendingTokens && result.brandId) {
+        try {
+          await gbpConnect.mutateAsync({
+            brandId: result.brandId,
+            locationName: gbpPendingLocation.name,
+            locationTitle: gbpPendingLocation.title,
+            accessToken: gbpPendingTokens.accessToken,
+            refreshToken: gbpPendingTokens.refreshToken,
+            expiresAt: gbpPendingTokens.expiresAt,
+          });
+        } catch (e: any) {
+          console.warn("[Onboarding] GBP connect failed after brand creation:", e.message);
+          // Don't block completion — they can connect from the dashboard later
+        }
+      }
       setIsDone(true);
     } catch (err: any) {
       toast.error(err.message || "Failed to complete setup");
@@ -511,7 +602,7 @@ export default function Onboarding() {
             {currentStep === 4 && (
               <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">
-                  Connect your Facebook Page and Instagram Business account so The Signal can post automatically. You can also do this later from your dashboard.
+                  Connect your social accounts so The Signal can post automatically. Facebook and Instagram can be connected from your dashboard after approval — but you can connect Google Business Profile right now.
                 </p>
                 <div className="space-y-3">
                   <Card className="bg-background border-border">
@@ -542,11 +633,42 @@ export default function Onboarding() {
                       <Badge variant="outline" className="border-muted text-muted-foreground">Connect later</Badge>
                     </CardContent>
                   </Card>
+                  <Card className={`bg-background border-border ${gbpPendingLocation ? "border-green-500/30" : ""}`}>
+                    <CardContent className="pt-4 pb-4 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${gbpPendingLocation ? "bg-green-500/20" : "bg-green-500/10"}`}>
+                          <MapPin className={`h-5 w-5 ${gbpPendingLocation ? "text-green-400" : "text-green-600/60"}`} />
+                        </div>
+                        <div>
+                          <p className="font-medium text-foreground text-sm">Google Business Profile</p>
+                          <p className="text-xs text-muted-foreground">
+                            {gbpPendingLocation ? gbpPendingLocation.title : "Show up in Google Search & Maps"}
+                          </p>
+                        </div>
+                      </div>
+                      {gbpPendingLocation ? (
+                        <Badge className="bg-green-500/20 text-green-400 border-green-500/30">Connected</Badge>
+                      ) : (
+                        <Button
+                          variant="outline" size="sm"
+                          className="gap-1.5 border-green-500/30 text-green-400 hover:bg-green-500/10"
+                          onClick={handleGbpOAuthClick}
+                          disabled={gbpConnecting || handleGbpCallback.isPending}
+                        >
+                          {(gbpConnecting || handleGbpCallback.isPending) ? (
+                            <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Connecting...</>
+                          ) : (
+                            <><MapPin className="h-3.5 w-3.5" /> Connect</>
+                          )}
+                        </Button>
+                      )}
+                    </CardContent>
+                  </Card>
                 </div>
                 <Card className="bg-cyan-500/10 border-cyan-500/30">
                   <CardContent className="pt-4 pb-4">
                     <p className="text-sm text-cyan-400">
-                      Social accounts can be connected from your Integrations page after your brand is approved. Your content will be generated and queued in the meantime.
+                      Facebook and Instagram can be connected from your Integrations page after your brand is approved. Your content will be generated and queued in the meantime.
                     </p>
                   </CardContent>
                 </Card>
@@ -644,6 +766,12 @@ export default function Onboarding() {
                     <p className="text-xs text-muted-foreground uppercase tracking-wider">Posting</p>
                     <p className="font-medium text-foreground">{postsPerDay}/day · {autoPost ? "Auto" : "Review mode"}</p>
                   </div>
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider">Google Business</p>
+                    <p className="font-medium text-foreground">
+                      {gbpPendingLocation ? gbpPendingLocation.title : <span className="text-muted-foreground">Not connected</span>}
+                    </p>
+                  </div>
                 </div>
                 <div className="pt-2 border-t border-border">
                   <p className="text-sm text-muted-foreground">
@@ -687,6 +815,36 @@ export default function Onboarding() {
           </CardContent>
         </Card>
       </div>
+
+      {/* GBP Location Selector Dialog */}
+      <Dialog open={gbpLocationOpen} onOpenChange={setGbpLocationOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MapPin className="h-5 w-5 text-green-500" />
+              Select a Google Business Location
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Choose which location to connect. Posts will be published to this listing.
+          </p>
+          <div className="space-y-2 max-h-72 overflow-y-auto">
+            {gbpLocations.map((loc) => (
+              <button
+                key={loc.name}
+                className="w-full text-left px-4 py-3 rounded-lg border border-border hover:border-primary/50 hover:bg-secondary/50 transition-colors"
+                onClick={() => gbpPendingTokens && handleGbpSelectLocation(loc, gbpPendingTokens)}
+              >
+                <p className="text-sm font-medium">{loc.title}</p>
+                <p className="text-xs text-muted-foreground mt-0.5 truncate">{loc.name}</p>
+              </button>
+            ))}
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* AI Assistant Chat */}
       <div className="fixed bottom-6 right-6 z-50">
