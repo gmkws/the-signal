@@ -142,17 +142,17 @@ export default function FillScheduleModal({ open, onClose, brandId, brandName }:
                 Saved as <strong>{createAs === "draft" ? "drafts" : "scheduled posts"}</strong> — review them in the Posts or Calendar page.
               </p>
               {imageStats && generateImages && (
-                <p className=”text-sm text-muted-foreground mt-2”>
-                  {imageStats.generated} image{imageStats.generated !== 1 ? “s” : “”} generated
+                <p className="text-sm text-muted-foreground mt-2">
+                  {imageStats.generated} image{imageStats.generated !== 1 ? "s" : ""} generated
                   {imageStats.failed > 0 && (
-                    <span className=”text-yellow-400”> · {imageStats.failed} failed — use the “Needs Image” filter to add them
+                    <span className="text-yellow-400"> · {imageStats.failed} failed — use the "Needs Image" filter to add them
                     </span>
                   )}
                 </p>
               )}
               {!generateImages && (
-                <p className=”text-sm text-muted-foreground mt-2”>
-                  No images generated — use the “Needs Image” filter to add custom images to each post.
+                <p className="text-sm text-muted-foreground mt-2">
+                  No images generated — use the "Needs Image" filter to add custom images to each post.
                 </p>
               )}
             </div>
