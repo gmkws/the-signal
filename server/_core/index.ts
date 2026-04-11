@@ -166,6 +166,40 @@ async function startServer() {
   app.get("/api/cron/publish", cronHandler);
   app.post("/api/cron/publish", cronHandler);
 
+  // ── Google Business Profile OAuth Callback ───────────────────────────────
+  // Receives the authorization code from Google and passes it back to the
+  // opener window via postMessage so the frontend can complete the flow.
+  app.get("/api/google/callback", (req: express.Request, res: express.Response) => {
+    const code = typeof req.query.code === "string" ? req.query.code : "";
+    const state = typeof req.query.state === "string" ? req.query.state : "";
+    const error = typeof req.query.error === "string" ? req.query.error : "";
+
+    const payload = error
+      ? JSON.stringify({ type: "GBP_OAUTH_ERROR", error })
+      : JSON.stringify({ type: "GBP_OAUTH_CODE", code, state });
+
+    res.setHeader("Content-Type", "text/html");
+    res.send(`<!DOCTYPE html>
+<html>
+<head><title>Connecting Google Business...</title></head>
+<body>
+<p style="font-family:sans-serif;text-align:center;padding:2rem">
+  Connecting to Google Business Profile — this window will close automatically.
+</p>
+<script>
+  try {
+    var data = ${payload};
+    data.redirectUri = window.location.origin + '/api/google/callback';
+    if (window.opener) {
+      window.opener.postMessage(data, window.location.origin);
+    }
+  } catch (e) {}
+  window.close();
+</script>
+</body>
+</html>`);
+  });
+
   // ── Meta Webhook (Instagram DMs + Facebook Messenger) ────────────────────
   app.get("/api/webhooks/meta", (req: express.Request, res: express.Response) => {
     const mode = req.query["hub.mode"];

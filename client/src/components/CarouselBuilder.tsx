@@ -13,9 +13,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Loader2, Sparkles, Save, Image as ImageIcon, ChevronLeft, ChevronRight,
-  Plus, Trash2, RefreshCw, Copy, Check, GripVertical, CalendarDays, Layers
+  Plus, Trash2, RefreshCw, Copy, Check, GripVertical, CalendarDays, Layers, Upload
 } from "lucide-react";
 import { toast } from "sonner";
 import { MediaUploadButton } from "@/components/MediaUploadButton";
@@ -50,13 +51,34 @@ export default function CarouselBuilder({ brandId, brandName }: Props) {
   const [saveStatus, setSaveStatus] = useState<"draft" | "scheduled">("draft");
   const [generatingImageFor, setGeneratingImageFor] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
+  const [imageSource, setImageSource] = useState<"ai" | "upload">("ai");
 
   const generateCarousel = trpc.ai.generateCarousel.useMutation({
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       setSlides(data.slides);
       setCaptionText(data.captionText);
       setActiveSlide(0);
       toast.success(`Generated ${data.slides.length} slides`);
+
+      if (imageSource === "ai") {
+        toast.info("Auto-generating images for all slides...");
+        const updatedSlides = data.slides.map(s => ({ ...s }));
+        for (let i = 0; i < data.slides.length; i++) {
+          const slide = data.slides[i];
+          setGeneratingImageFor(i);
+          try {
+            const result = await generateImage.mutateAsync({
+              prompt: `${slide.imagePrompt}. No text, no words, no letters. Professional social media visual for ${brandName}.`,
+            });
+            updatedSlides[i] = { ...updatedSlides[i], imageUrl: result.imageUrl };
+            setSlides([...updatedSlides]);
+          } catch {
+            // Non-fatal — slide saves without image
+          }
+        }
+        setGeneratingImageFor(null);
+        toast.success("All slide images generated");
+      }
     },
     onError: (e) => toast.error(`Generation failed: ${e.message}`),
   });
@@ -193,13 +215,46 @@ export default function CarouselBuilder({ brandId, brandName }: Props) {
               />
             </div>
           </div>
+          {/* Image Source Toggle */}
+          <div className="space-y-2">
+            <Label className="text-sm">Image Source</Label>
+            <RadioGroup
+              value={imageSource}
+              onValueChange={(v) => setImageSource(v as "ai" | "upload")}
+              className="flex gap-4"
+            >
+              <label className="flex items-center gap-2 cursor-pointer">
+                <RadioGroupItem value="ai" id="cb-img-ai" />
+                <span className="text-sm flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5 text-primary" />
+                  Auto-Generate AI Images
+                </span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <RadioGroupItem value="upload" id="cb-img-upload" />
+                <span className="text-sm flex items-center gap-1.5">
+                  <Upload className="h-3.5 w-3.5 text-muted-foreground" />
+                  Upload Custom Images
+                </span>
+              </label>
+            </RadioGroup>
+            {imageSource === "ai" && (
+              <p className="text-xs text-muted-foreground">Images will be auto-generated for each slide after content is created.</p>
+            )}
+            {imageSource === "upload" && (
+              <p className="text-xs text-muted-foreground">No AI images will be generated. Upload your own image for each slide.</p>
+            )}
+          </div>
+
           <Button
             onClick={handleGenerate}
-            disabled={generateCarousel.isPending}
+            disabled={generateCarousel.isPending || generatingImageFor !== null}
             className="w-full gap-2"
           >
             {generateCarousel.isPending ? (
               <><Loader2 className="h-4 w-4 animate-spin" />Generating slides...</>
+            ) : generatingImageFor !== null ? (
+              <><Loader2 className="h-4 w-4 animate-spin" />Generating images ({generatingImageFor + 1}/{slides.length})...</>
             ) : (
               <><Sparkles className="h-4 w-4" />{hasSlides ? "Regenerate Carousel" : "Generate Carousel"}</>
             )}
@@ -320,37 +375,46 @@ export default function CarouselBuilder({ brandId, brandName }: Props) {
                           alt={`Slide ${activeSlide + 1}`}
                           className="w-full aspect-square object-cover rounded-lg border border-border"
                         />
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity gap-1 text-xs"
-                          onClick={() => handleGenerateSlideImage(activeSlide)}
-                          disabled={generatingImageFor === activeSlide}
-                        >
-                          {generatingImageFor === activeSlide ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <RefreshCw className="h-3 w-3" />
-                          )}
-                          Regenerate
-                        </Button>
+                        {imageSource === "ai" && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity gap-1 text-xs"
+                            onClick={() => handleGenerateSlideImage(activeSlide)}
+                            disabled={generatingImageFor === activeSlide}
+                          >
+                            {generatingImageFor === activeSlide ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-3 w-3" />
+                            )}
+                            Regenerate
+                          </Button>
+                        )}
+                      </div>
+                    ) : imageSource === "upload" ? (
+                      <div className="w-full aspect-square rounded-lg border-2 border-dashed border-border flex flex-col items-center justify-center gap-3 bg-secondary/20">
+                        <Upload className="h-10 w-10 text-muted-foreground/40" />
+                        <p className="text-xs text-muted-foreground">Upload image below</p>
                       </div>
                     ) : (
                       <div className="w-full aspect-square rounded-lg border-2 border-dashed border-border flex flex-col items-center justify-center gap-3 bg-secondary/20">
-                        <ImageIcon className="h-10 w-10 text-muted-foreground/40" />
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleGenerateSlideImage(activeSlide)}
-                          disabled={generatingImageFor === activeSlide}
-                          className="gap-2"
-                        >
-                          {generatingImageFor === activeSlide ? (
-                            <><Loader2 className="h-3.5 w-3.5 animate-spin" />Generating...</>
-                          ) : (
-                            <><Sparkles className="h-3.5 w-3.5" />Generate Image</>
-                          )}
-                        </Button>
+                        {generatingImageFor === activeSlide ? (
+                          <><Loader2 className="h-10 w-10 text-muted-foreground/40 animate-spin" /><p className="text-xs text-muted-foreground">Generating...</p></>
+                        ) : (
+                          <>
+                            <ImageIcon className="h-10 w-10 text-muted-foreground/40" />
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleGenerateSlideImage(activeSlide)}
+                              disabled={generatingImageFor !== null}
+                              className="gap-2"
+                            >
+                              <Sparkles className="h-3.5 w-3.5" />Generate Image
+                            </Button>
+                          </>
+                        )}
                       </div>
                     )}
                     <MediaUploadButton
@@ -390,26 +454,28 @@ export default function CarouselBuilder({ brandId, brandName }: Props) {
             </CardContent>
           </Card>
 
-          {/* Bulk Image Generation */}
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-secondary/30 border border-border">
-            <ImageIcon className="h-4 w-4 text-muted-foreground shrink-0" />
-            <p className="text-sm text-muted-foreground flex-1">
-              {slides.filter(s => s.imageUrl).length} of {slides.length} slides have images.
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleGenerateAllImages}
-              disabled={generatingImageFor !== null}
-              className="gap-2 text-xs shrink-0"
-            >
-              {generatingImageFor !== null ? (
-                <><Loader2 className="h-3.5 w-3.5 animate-spin" />Generating...</>
-              ) : (
-                <><Sparkles className="h-3.5 w-3.5" />Generate All Images</>
-              )}
-            </Button>
-          </div>
+          {/* Bulk Image Generation — only shown in AI mode */}
+          {imageSource === "ai" && (
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-secondary/30 border border-border">
+              <ImageIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+              <p className="text-sm text-muted-foreground flex-1">
+                {slides.filter(s => s.imageUrl).length} of {slides.length} slides have images.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleGenerateAllImages}
+                disabled={generatingImageFor !== null}
+                className="gap-2 text-xs shrink-0"
+              >
+                {generatingImageFor !== null ? (
+                  <><Loader2 className="h-3.5 w-3.5 animate-spin" />Generating ({generatingImageFor + 1}/{slides.length})...</>
+                ) : (
+                  <><Sparkles className="h-3.5 w-3.5" />Regenerate All Images</>
+                )}
+              </Button>
+            </div>
+          )}
 
           {/* Save Controls */}
           <Card>

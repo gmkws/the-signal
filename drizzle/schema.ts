@@ -60,13 +60,15 @@ export type InsertBrand = typeof brands.$inferInsert;
 export const socialAccounts = mysqlTable("social_accounts", {
   id: int("id").autoincrement().primaryKey(),
   brandId: int("brandId").notNull(),
-  platform: mysqlEnum("platform", ["facebook", "instagram"]).notNull(),
+  platform: mysqlEnum("platform", ["facebook", "instagram", "google_business"]).notNull(),
   platformAccountId: varchar("platformAccountId", { length: 200 }).notNull(),
   accountName: varchar("accountName", { length: 300 }),
   accessToken: text("accessToken"),
+  refreshToken: text("refreshToken"),
   tokenExpiresAt: timestamp("tokenExpiresAt"),
   pageId: varchar("pageId", { length: 200 }),
   instagramBusinessId: varchar("instagramBusinessId", { length: 200 }),
+  gbpLocationId: varchar("gbpLocationId", { length: 200 }),
   isConnected: boolean("isConnected").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -116,6 +118,8 @@ export const posts = mysqlTable("posts", {
   // Meta API response data
   facebookPostId: varchar("facebookPostId", { length: 200 }),
   instagramPostId: varchar("instagramPostId", { length: 200 }),
+  // Google Business Profile API response data
+  googleBusinessPostId: varchar("googleBusinessPostId", { length: 200 }),
   // Retry tracking for failed posts
   retryCount: int("retryCount").default(0).notNull(),
   lastFailureReason: text("lastFailureReason"),

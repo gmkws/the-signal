@@ -11,7 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, CalendarDays, Sparkles, CheckCircle2, AlertCircle, Clock } from "lucide-react";
+import { Loader2, CalendarDays, Sparkles, CheckCircle2, AlertCircle, Clock, Upload } from "lucide-react";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "sonner";
 import { CONTENT_TYPE_LABELS } from "@shared/types";
 
@@ -47,6 +48,7 @@ export default function FillScheduleModal({ open, onClose, brandId, brandName }:
   const [secondPostHour, setSecondPostHour] = useState(17);
   const [createAs, setCreateAs] = useState<"draft" | "scheduled">("draft");
   const [useContentSources, setUseContentSources] = useState(true);
+  const [generateImages, setGenerateImages] = useState(true);
   const [confirmed, setConfirmed] = useState(false);
   const [done, setDone] = useState(false);
   const [createdCount, setCreatedCount] = useState(0);
@@ -90,6 +92,7 @@ export default function FillScheduleModal({ open, onClose, brandId, brandName }:
       startDate,
       createAs,
       useContentSources,
+      generateImages,
     });
   };
 
@@ -138,13 +141,18 @@ export default function FillScheduleModal({ open, onClose, brandId, brandName }:
               <p className="text-muted-foreground mt-1">
                 Saved as <strong>{createAs === "draft" ? "drafts" : "scheduled posts"}</strong> — review them in the Posts or Calendar page.
               </p>
-              {imageStats && (
-                <p className="text-sm text-muted-foreground mt-2">
-                  🖼️ {imageStats.generated} image{imageStats.generated !== 1 ? "s" : ""} generated
+              {imageStats && generateImages && (
+                <p className=”text-sm text-muted-foreground mt-2”>
+                  {imageStats.generated} image{imageStats.generated !== 1 ? “s” : “”} generated
                   {imageStats.failed > 0 && (
-                    <span className="text-yellow-400"> · {imageStats.failed} failed — use the “Needs Image” filter to regenerate
+                    <span className=”text-yellow-400”> · {imageStats.failed} failed — use the “Needs Image” filter to add them
                     </span>
                   )}
+                </p>
+              )}
+              {!generateImages && (
+                <p className=”text-sm text-muted-foreground mt-2”>
+                  No images generated — use the “Needs Image” filter to add custom images to each post.
                 </p>
               )}
             </div>
@@ -155,8 +163,14 @@ export default function FillScheduleModal({ open, onClose, brandId, brandName }:
           <div className="py-12 text-center space-y-4">
             <Loader2 className="h-12 w-12 text-primary mx-auto animate-spin" />
             <div>
-              <p className="text-lg font-semibold">Generating {newCount} posts with images...</p>
-              <p className="text-sm text-muted-foreground mt-1">Writing content and generating a visual for each post. This may take 1–3 minutes depending on queue size.</p>
+              <p className="text-lg font-semibold">
+                Generating {newCount} posts{generateImages ? " with images" : ""}...
+              </p>
+              <p className="text-sm text-muted-foreground mt-1">
+                {generateImages
+                  ? "Writing content and generating a visual for each post. This may take 1–3 minutes depending on queue size."
+                  : "Writing content for each post. This should only take a moment."}
+              </p>
             </div>
           </div>
         ) : (
@@ -220,6 +234,36 @@ export default function FillScheduleModal({ open, onClose, brandId, brandName }:
                   <Label htmlFor="fill-sources" className="text-sm cursor-pointer">Mix in services/products</Label>
                 </div>
               </div>
+            </div>
+
+            {/* Image Source Toggle */}
+            <div className="p-3 rounded-lg border border-border bg-secondary/20 space-y-2">
+              <Label className="text-sm font-medium">Image Source</Label>
+              <RadioGroup
+                value={generateImages ? "ai" : "upload"}
+                onValueChange={(v) => setGenerateImages(v === "ai")}
+                className="flex gap-6"
+              >
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <RadioGroupItem value="ai" id="fill-img-ai" />
+                  <span className="text-sm flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5 text-primary" />
+                    Auto-Generate AI Images
+                  </span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <RadioGroupItem value="upload" id="fill-img-upload" />
+                  <span className="text-sm flex items-center gap-1.5">
+                    <Upload className="h-3.5 w-3.5 text-muted-foreground" />
+                    No Images (Upload Later)
+                  </span>
+                </label>
+              </RadioGroup>
+              <p className="text-xs text-muted-foreground">
+                {generateImages
+                  ? "An AI image will be generated for each post. Adds ~10–20s per post to the total time."
+                  : "Posts will be saved without images. Use the \"Needs Image\" filter later to add them."}
+              </p>
             </div>
 
             {/* Slot Preview */}

@@ -78,6 +78,13 @@
       "when": 1775535742646,
       "tag": "0010_material_warbird",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "5",
+      "when": 1775881295634,
+      "tag": "0011_lonely_radioactive_man",
+      "breakpoints": true
     }
   ]
 }

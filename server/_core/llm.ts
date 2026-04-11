@@ -262,6 +262,78 @@ const normalizeResponseFormat = ({
   };
 };
 
+export async function generateCaseStudy(params: {
+  serviceType: string;
+  beforeImageBase64: string;
+  afterImageBase64: string;
+  brandName?: string;
+}): Promise<{ caption: string }> {
+  if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
+    throw new Error("Manus Forge API credentials are not configured");
+  }
+
+  const baseUrl = ENV.forgeApiUrl.endsWith("/") ? ENV.forgeApiUrl : `${ENV.forgeApiUrl}/`;
+  const endpoint = new URL("v1/chat/completions", baseUrl).toString();
+
+  const systemPrompt = `You are a social media content expert for local service businesses. \
+Analyze the before and after job site photos provided and write a highly engaging social media caption. \
+The caption must:
+- Open with a compelling hook that immediately grabs attention (e.g., a dramatic contrast or question)
+- Briefly describe the problem visible in the BEFORE photo
+- Highlight the transformation and craftsmanship shown in the AFTER photo
+- Use a conversational, proud, and relatable tone — as if the business owner is sharing the win
+- End with a strong call-to-action (e.g., DM us, call today, link in bio)
+- Include 6–8 relevant hashtags at the very end
+Keep the caption under 280 words. Do not use generic filler phrases. Do not mention "before and after" literally — show it through description.`;
+
+  const payload = {
+    model: "gemini-2.5-flash",
+    messages: [
+      { role: "system", content: systemPrompt },
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: `Service Type: ${params.serviceType}${params.brandName ? `\nBusiness: ${params.brandName}` : ""}\n\nFirst image is the BEFORE. Second image is the AFTER. Write the social media caption.`,
+          },
+          {
+            type: "image_url",
+            image_url: { url: `data:image/jpeg;base64,${params.beforeImageBase64}`, detail: "high" as const },
+          },
+          {
+            type: "image_url",
+            image_url: { url: `data:image/jpeg;base64,${params.afterImageBase64}`, detail: "high" as const },
+          },
+        ],
+      },
+    ],
+    max_tokens: 1024,
+  };
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${ENV.forgeApiKey}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Case study generation failed: ${response.status} ${response.statusText} – ${errorText}`);
+  }
+
+  const result = await response.json() as InvokeResult;
+  const content = result.choices?.[0]?.message?.content;
+  if (!content || typeof content !== "string") {
+    throw new Error("No caption returned from model");
+  }
+
+  return { caption: content };
+}
+
 export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   assertApiKey();
 

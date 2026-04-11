@@ -6,6 +6,8 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
 import { generatePost, generatePostImage, pickContentType, generateBatch, buildBatchSlots, generateCarouselPost } from "./services/contentEngine";
+import { buildGBPOAuthUrl, exchangeGoogleCode, getGBPAccounts, getGBPLocations } from "./services/googleBusiness";
+import { generateCaseStudy } from "./_core/llm";
 import type { ContentFormat, ContentSourceInfo } from "./services/contentEngine";
 import { MAX_BRANDS } from "@shared/types";
 import { validateShopifyConnection, fetchShopifyProducts, transformShopifyProduct, fetchShopifyCollections } from "./services/shopify";
@@ -510,6 +512,7 @@ const aiRouter = router({
       formatRotation: z.array(z.string()).optional(),
       createAs: z.enum(["draft", "scheduled"]).default("draft"),
       useContentSources: z.boolean().default(true),
+      generateImages: z.boolean().default(true),
     }))
     .mutation(async ({ ctx, input }) => {
       const brand = await db.getBrandById(input.brandId);
@@ -557,7 +560,7 @@ const aiRouter = router({
         }
       }
       // Generate all posts
-      const generated = await generateBatch(brand.name, slots, brand.voiceSettings as any, sourceInfo);
+      const generated = await generateBatch(brand.name, slots, brand.voiceSettings as any, sourceInfo, input.generateImages);
       // Save to DB
       const saved: number[] = [];
       let imagesGenerated = 0;
@@ -617,6 +620,29 @@ const aiRouter = router({
         sourceInfo
       );
       return result;
+    }),
+
+  // Generate a case study caption from before/after job site photos
+  generateCaseStudy: protectedProcedure
+    .input(z.object({
+      brandId: z.number(),
+      serviceType: z.string().min(1),
+      beforeImage: z.string().min(1), // base64-encoded image (no data URI prefix)
+      afterImage: z.string().min(1),  // base64-encoded image (no data URI prefix)
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const brand = await db.getBrandById(input.brandId);
+      if (!brand) throw new TRPCError({ code: "NOT_FOUND", message: "Brand not found" });
+      if (ctx.user.role !== "admin" && brand.clientUserId !== ctx.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      const result = await generateCaseStudy({
+        serviceType: input.serviceType,
+        beforeImageBase64: input.beforeImage,
+        afterImageBase64: input.afterImage,
+        brandName: brand.name,
+      });
+      return { content: result.caption, contentType: "case_study" };
     }),
 
   // Save a carousel post to the database
@@ -1578,6 +1604,108 @@ const leadsRouter = router({
     }),
 });
 
+// ── Google Business Profile Router ────────────────────────────────────────
+
+const gbpRouter = router({
+  /**
+   * Returns the Google OAuth URL for the connect popup.
+   * The state param carries the brandId so the callback can close correctly.
+   */
+  getOAuthUrl: adminProcedure
+    .input(z.object({ brandId: z.number(), redirectUri: z.string().url() }))
+    .query(({ input }) => {
+      const clientId = process.env.GOOGLE_CLIENT_ID ?? "";
+      if (!clientId) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "GOOGLE_CLIENT_ID not configured" });
+      const url = buildGBPOAuthUrl(clientId, input.redirectUri, String(input.brandId));
+      return { url };
+    }),
+
+  /**
+   * Exchange the authorization code for OAuth tokens and return the list of
+   * GBP locations the user manages so they can pick one.
+   */
+  handleCallback: adminProcedure
+    .input(z.object({
+      brandId: z.number(),
+      code: z.string().min(1),
+      redirectUri: z.string().url(),
+    }))
+    .mutation(async ({ input }) => {
+      const clientId = process.env.GOOGLE_CLIENT_ID ?? "";
+      const clientSecret = process.env.GOOGLE_CLIENT_SECRET ?? "";
+      if (!clientId || !clientSecret) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Google credentials not configured" });
+      }
+
+      const tokens = await exchangeGoogleCode(input.code, input.redirectUri, clientId, clientSecret);
+
+      // Fetch all accounts then their locations
+      const accounts = await getGBPAccounts(tokens.access_token);
+      const locations: Array<{ name: string; title: string; accountName: string }> = [];
+      for (const account of accounts) {
+        const locs = await getGBPLocations(account.name, tokens.access_token).catch(() => []);
+        for (const loc of locs) {
+          locations.push({ name: loc.name, title: loc.title, accountName: account.name });
+        }
+      }
+
+      const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
+
+      return {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token ?? null,
+        expiresAt,
+        locations,
+      };
+    }),
+
+  /**
+   * Save the selected GBP location as a connected social account.
+   */
+  connect: adminProcedure
+    .input(z.object({
+      brandId: z.number(),
+      locationName: z.string().min(1),
+      locationTitle: z.string(),
+      accessToken: z.string().min(1),
+      refreshToken: z.string().nullable(),
+      expiresAt: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const existing = await db.getSocialAccountsByBrandId(input.brandId);
+      const gbpAccount = existing.find((a: any) => a.platform === "google_business");
+
+      const accountData = {
+        brandId: input.brandId,
+        platform: "google_business" as const,
+        platformAccountId: input.locationName,
+        accountName: input.locationTitle,
+        accessToken: input.accessToken,
+        refreshToken: input.refreshToken ?? undefined,
+        gbpLocationId: input.locationName,
+        tokenExpiresAt: input.expiresAt ? new Date(input.expiresAt) : undefined,
+        isConnected: true,
+      };
+
+      if (gbpAccount) {
+        await db.updateSocialAccount(gbpAccount.id, accountData as any);
+        return { id: gbpAccount.id };
+      }
+      const result = await db.createSocialAccount(accountData as any);
+      return { id: result.id };
+    }),
+
+  /**
+   * Remove a connected GBP account.
+   */
+  disconnect: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteSocialAccount(input.id);
+      return { success: true };
+    }),
+});
+
 // ── Main App Router ────────────────────────────────────────────────────────
 export const appRouter = router({
   system: systemRouter,
@@ -1602,6 +1730,7 @@ export const appRouter = router({
   health: systemHealthRouter,
   onboarding: onboardingRouter,
   leads: leadsRouter,
+  gbp: gbpRouter,
 });
 
 export type AppRouter = typeof appRouter;

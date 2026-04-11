@@ -7,8 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Globe, Plus, Trash2, Facebook, Instagram, Link2, ShoppingBag, RefreshCw, Package, Store } from "lucide-react";
-import { useState } from "react";
+import { Globe, Plus, Trash2, Facebook, Instagram, Link2, ShoppingBag, RefreshCw, Package, Store, MapPin, Loader2 } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { META_APP_ID } from "@shared/types";
 
@@ -24,6 +24,12 @@ export default function AdminSocial() {
     platformAccountId: "", accountName: "", accessToken: "",
     pageId: "", instagramBusinessId: "",
   });
+
+  // GBP state
+  const [gbpLocationOpen, setGbpLocationOpen] = useState(false);
+  const [gbpLocations, setGbpLocations] = useState<Array<{ name: string; title: string; accountName: string }>>([]);
+  const [gbpPendingTokens, setGbpPendingTokens] = useState<{ accessToken: string; refreshToken: string | null; expiresAt: string } | null>(null);
+  const [gbpConnecting, setGbpConnecting] = useState(false);
 
   const brandId = selectedBrand ? parseInt(selectedBrand) : undefined;
   const { data: accounts, isLoading } = trpc.social.listByBrand.useQuery(
@@ -76,6 +82,101 @@ export default function AdminSocial() {
     },
     onError: (e) => toast.error(e.message),
   });
+
+  const getGbpOAuthUrl = trpc.gbp.getOAuthUrl.useQuery(
+    { brandId: brandId!, redirectUri: window.location.origin + "/api/google/callback" },
+    { enabled: false } // only fetched on demand
+  );
+
+  const handleGbpCallback = trpc.gbp.handleCallback.useMutation({
+    onSuccess: (data) => {
+      setGbpPendingTokens({ accessToken: data.accessToken, refreshToken: data.refreshToken, expiresAt: data.expiresAt });
+      setGbpLocations(data.locations);
+      setGbpConnecting(false);
+      if (data.locations.length === 0) {
+        toast.error("No Google Business locations found on this account");
+      } else if (data.locations.length === 1) {
+        // Auto-select if only one location
+        handleGbpConnect(data.locations[0], { accessToken: data.accessToken, refreshToken: data.refreshToken, expiresAt: data.expiresAt });
+      } else {
+        setGbpLocationOpen(true);
+      }
+    },
+    onError: (e) => {
+      setGbpConnecting(false);
+      toast.error(`GBP connect failed: ${e.message}`);
+    },
+  });
+
+  const gbpConnect = trpc.gbp.connect.useMutation({
+    onSuccess: () => {
+      utils.social.listByBrand.invalidate();
+      setGbpLocationOpen(false);
+      setGbpPendingTokens(null);
+      setGbpLocations([]);
+      toast.success("Google Business Profile connected!");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const gbpDisconnect = trpc.gbp.disconnect.useMutation({
+    onSuccess: () => {
+      utils.social.listByBrand.invalidate();
+      toast.success("Google Business Profile disconnected");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const handleGbpConnect = useCallback((
+    location: { name: string; title: string },
+    tokens: { accessToken: string; refreshToken: string | null; expiresAt: string }
+  ) => {
+    if (!brandId) return;
+    gbpConnect.mutate({
+      brandId,
+      locationName: location.name,
+      locationTitle: location.title,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresAt: tokens.expiresAt,
+    });
+  }, [brandId, gbpConnect]);
+
+  // Listen for the OAuth popup postMessage
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      const data = event.data;
+      if (!data || typeof data !== "object") return;
+
+      if (data.type === "GBP_OAUTH_CODE" && data.code && brandId) {
+        handleGbpCallback.mutate({
+          brandId,
+          code: data.code,
+          redirectUri: data.redirectUri || (window.location.origin + "/api/google/callback"),
+        });
+      } else if (data.type === "GBP_OAUTH_ERROR") {
+        setGbpConnecting(false);
+        toast.error(`Google OAuth error: ${data.error}`);
+      }
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, [brandId, handleGbpCallback]);
+
+  const handleGbpOAuthClick = async () => {
+    if (!brandId) return;
+    setGbpConnecting(true);
+    try {
+      const result = await getGbpOAuthUrl.refetch();
+      const url = result.data?.url;
+      if (!url) throw new Error("Could not get OAuth URL");
+      window.open(url, "gbp_oauth", "width=600,height=700,noopener");
+    } catch (e: any) {
+      setGbpConnecting(false);
+      toast.error(`Failed to start Google OAuth: ${e.message}`);
+    }
+  };
 
   const syncProducts = trpc.shopify.syncProducts.useMutation({
     onSuccess: (data) => {
@@ -195,6 +296,8 @@ export default function AdminSocial() {
                           <div className="p-2 rounded-lg bg-secondary">
                             {account.platform === "facebook" ? (
                               <Facebook className="h-5 w-5 text-blue-500" />
+                            ) : account.platform === "google_business" ? (
+                              <MapPin className="h-5 w-5 text-green-500" />
                             ) : (
                               <Instagram className="h-5 w-5 text-pink-500" />
                             )}
@@ -202,7 +305,9 @@ export default function AdminSocial() {
                           <div>
                             <p className="text-sm font-medium">{account.accountName || account.platformAccountId}</p>
                             <div className="flex items-center gap-2 mt-0.5">
-                              <Badge variant="outline" className="text-xs capitalize">{account.platform}</Badge>
+                              <Badge variant="outline" className="text-xs capitalize">
+                                {account.platform === "google_business" ? "Google Business" : account.platform}
+                              </Badge>
                               <Badge variant={account.isConnected ? "default" : "destructive"} className="text-xs">
                                 {account.isConnected ? "Connected" : "Disconnected"}
                               </Badge>
@@ -228,6 +333,77 @@ export default function AdminSocial() {
                 </CardContent>
               </Card>
             )}
+          </div>
+
+          {/* Google Business Profile Section */}
+          <div>
+            <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+              <MapPin className="h-5 w-5 text-muted-foreground" />
+              Google Business Profile
+            </h2>
+            {(() => {
+              const gbpAccount = accounts?.find(a => a.platform === "google_business");
+              if (gbpAccount) {
+                return (
+                  <Card className="border-green-500/20">
+                    <CardContent className="py-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 rounded-lg bg-green-500/10">
+                            <MapPin className="h-5 w-5 text-green-500" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium">{gbpAccount.accountName || gbpAccount.platformAccountId}</p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <Badge className="text-xs bg-green-500/20 text-green-400 border-green-500/30">Connected</Badge>
+                              <span className="text-xs text-muted-foreground truncate max-w-[200px]">{gbpAccount.platformAccountId}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost" size="icon" className="h-8 w-8 text-destructive"
+                          onClick={() => { if (confirm("Disconnect Google Business Profile?")) gbpDisconnect.mutate({ id: gbpAccount.id }); }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              }
+              return (
+                <Card className="border-primary/20 bg-primary/5">
+                  <CardContent className="py-4">
+                    <div className="flex items-start gap-3">
+                      <MapPin className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium mb-1">Google Business Profile</p>
+                        <p className="text-xs text-muted-foreground mb-3">
+                          Post updates directly to your Google Business listing so customers see fresh content in Search and Maps.
+                        </p>
+                        <Button
+                          variant="outline" size="sm"
+                          className="gap-2 border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+                          onClick={handleGbpOAuthClick}
+                          disabled={gbpConnecting || handleGbpCallback.isPending}
+                        >
+                          {(gbpConnecting || handleGbpCallback.isPending) ? (
+                            <><Loader2 className="h-4 w-4 animate-spin" /> Connecting...</>
+                          ) : (
+                            <><MapPin className="h-4 w-4" /> Connect Google Business</>
+                          )}
+                        </Button>
+                        {!process.env.GOOGLE_CLIENT_ID && (
+                          <p className="text-xs text-yellow-400 mt-2">
+                            GOOGLE_CLIENT_ID not configured in .env
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })()}
           </div>
 
           {/* Shopify Connection Section */}
@@ -374,6 +550,39 @@ export default function AdminSocial() {
             <Button onClick={handleConnect} disabled={!form.platformAccountId || !form.accessToken || connectAccount.isPending}>
               {connectAccount.isPending ? "Connecting..." : "Connect"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* GBP Location Selector Dialog */}
+      <Dialog open={gbpLocationOpen} onOpenChange={setGbpLocationOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MapPin className="h-5 w-5 text-green-500" />
+              Select a Google Business Location
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Choose which location to connect. Posts will be published to this listing.
+          </p>
+          <div className="space-y-2 max-h-72 overflow-y-auto">
+            {gbpLocations.map((loc) => (
+              <button
+                key={loc.name}
+                className="w-full text-left px-4 py-3 rounded-lg border border-border hover:border-primary/50 hover:bg-secondary/50 transition-colors"
+                onClick={() => {
+                  if (gbpPendingTokens) handleGbpConnect(loc, gbpPendingTokens);
+                }}
+                disabled={gbpConnect.isPending}
+              >
+                <p className="text-sm font-medium">{loc.title}</p>
+                <p className="text-xs text-muted-foreground mt-0.5 truncate">{loc.name}</p>
+              </button>
+            ))}
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
           </DialogFooter>
         </DialogContent>
       </Dialog>

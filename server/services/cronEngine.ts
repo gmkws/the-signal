@@ -14,11 +14,13 @@ import {
   getPostsByStatus,
   updatePost,
   getSocialAccountsByBrandId,
+  updateSocialAccount,
   createErrorLog,
   createNotification,
   getAllBrands,
 } from "../db";
 import { publishToFacebook, publishToInstagram, publishCarouselToFacebook, publishCarouselToInstagram } from "./meta";
+import { publishToGBP, refreshGoogleToken } from "./googleBusiness";
 import { notifyOwner } from "../_core/notification";
 
 const MAX_RETRIES = 3;
@@ -91,6 +93,7 @@ async function publishPost(post: any): Promise<{ success: boolean; error?: strin
 
   let facebookPostId: string | undefined;
   let instagramPostId: string | undefined;
+  let gbpPostId: string | undefined;
   const errors: string[] = [];
 
   for (const platform of platforms) {
@@ -167,6 +170,52 @@ async function publishPost(post: any): Promise<{ success: boolean; error?: strin
           );
           instagramPostId = result.id;
         }
+      } else if (platform === "google_business") {
+        const gbpAccount = socialAccounts.find(
+          (a: any) => a.platform === "google_business" && a.isConnected
+        );
+        if (!gbpAccount) {
+          errors.push("No connected Google Business Profile account");
+          continue;
+        }
+
+        // Refresh token if expired (with a 60-second buffer)
+        let accessToken = gbpAccount.accessToken ?? "";
+        if (
+          gbpAccount.refreshToken &&
+          gbpAccount.tokenExpiresAt &&
+          new Date(gbpAccount.tokenExpiresAt).getTime() - 60_000 <= Date.now()
+        ) {
+          try {
+            const refreshed = await refreshGoogleToken(
+              gbpAccount.refreshToken,
+              process.env.GOOGLE_CLIENT_ID ?? "",
+              process.env.GOOGLE_CLIENT_SECRET ?? ""
+            );
+            accessToken = refreshed.access_token;
+            await updateSocialAccount(gbpAccount.id, {
+              accessToken: refreshed.access_token,
+              tokenExpiresAt: new Date(Date.now() + refreshed.expires_in * 1000),
+            });
+          } catch (refreshErr: any) {
+            errors.push(`google_business: token refresh failed — ${refreshErr.message}`);
+            continue;
+          }
+        }
+
+        const locationName = gbpAccount.gbpLocationId || gbpAccount.platformAccountId;
+        if (!locationName) {
+          errors.push("Google Business Profile: no location ID configured");
+          continue;
+        }
+
+        const result = await publishToGBP(
+          locationName,
+          accessToken,
+          post.content,
+          post.imageUrl || undefined
+        );
+        gbpPostId = result.name;
       }
     } catch (err: any) {
       errors.push(`${platform}: ${err.message}`);
@@ -174,7 +223,7 @@ async function publishPost(post: any): Promise<{ success: boolean; error?: strin
   }
 
   // If at least one platform succeeded, consider it a partial success
-  const anySuccess = facebookPostId || instagramPostId;
+  const anySuccess = facebookPostId || instagramPostId || gbpPostId;
 
   if (anySuccess) {
     // Update post with published IDs
@@ -183,6 +232,7 @@ async function publishPost(post: any): Promise<{ success: boolean; error?: strin
       publishedAt: new Date(),
       facebookPostId: facebookPostId || post.facebookPostId,
       instagramPostId: instagramPostId || post.instagramPostId,
+      googleBusinessPostId: gbpPostId || post.googleBusinessPostId,
     });
     return { success: true };
   }

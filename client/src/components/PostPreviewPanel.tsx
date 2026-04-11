@@ -30,16 +30,19 @@ function extractHashtags(text: string): string[] {
 }
 
 function formatForDisplay(text: string): React.ReactNode {
-  // Split on hashtags and URLs for colored rendering
+  // Split on hashtags and URLs for colored rendering.
+  // Key uses content + index so React can diff correctly without blowing away
+  // DOM nodes when the part count changes (avoids focus loss in parent inputs).
   const parts = text.split(/(#\w+|https?:\/\/\S+)/g);
   return parts.map((part, i) => {
+    const key = `${i}:${part}`;
     if (part.startsWith("#")) {
-      return <span key={i} className="text-blue-400">{part}</span>;
+      return <span key={key} className="text-blue-400">{part}</span>;
     }
     if (part.startsWith("http")) {
-      return <span key={i} className="text-blue-400 underline">{part}</span>;
+      return <span key={key} className="text-blue-400 underline">{part}</span>;
     }
-    return <span key={i}>{part}</span>;
+    return <span key={key}>{part}</span>;
   });
 }
 
@@ -200,9 +203,9 @@ function InstagramCarouselPreview({
 
       {/* Dot indicators */}
       <div className="flex justify-center gap-1.5 py-2 bg-black">
-        {slides.map((_, i) => (
+        {slides.map((slide, i) => (
           <button
-            key={i}
+            key={`dot-${i}-${slide.headline}`}
             onClick={() => setCurrent(i)}
             className={`h-1.5 rounded-full transition-all ${i === current ? "w-4 bg-blue-400" : "w-1.5 bg-white/30"}`}
           />
