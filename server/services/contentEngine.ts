@@ -298,7 +298,7 @@ export interface PostImageResult {
  * Returns URL (always) and base64 data (when available, for SVG embedding).
  */
 export async function generatePostImage(prompt: string): Promise<PostImageResult> {
-  // Keep the prompt concise — DALL-E 3 works best with shorter, focused prompts
+  // Keep the prompt concise — gpt-image-1 works best with shorter, focused prompts
   const trimmedPrompt = prompt.length > 500 ? prompt.substring(0, 500) : prompt;
 
   console.log(`[ImageGen] Generating image with prompt: ${trimmedPrompt.substring(0, 100)}...`);
@@ -307,13 +307,13 @@ export async function generatePostImage(prompt: string): Promise<PostImageResult
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const result = await generateImage({ prompt: trimmedPrompt, quality: "hd" });
+      const result = await generateImage({ prompt: trimmedPrompt, quality: "high" });
       if (!result.url) throw new Error("Image generation returned no URL");
       return { url: result.url, base64: result.base64 };
     } catch (err: any) {
       lastError = err;
       if (err.message?.includes("500") && attempt < 2) {
-        console.warn(`[ImageGen] DALL-E 500 error, retrying (attempt ${attempt + 1}/3)...`);
+        console.warn(`[ImageGen] gpt-image-1 500 error, retrying (attempt ${attempt + 1}/3)...`);
         await new Promise(r => setTimeout(r, 2000 * (attempt + 1))); // Backoff: 2s, 4s
         continue;
       }

@@ -1,5 +1,5 @@
 /**
- * Image generation using OpenAI DALL-E 3
+ * Image generation using OpenAI gpt-image-1
  *
  * Generates background images (no text) for social media posts.
  * Text is overlaid separately by the imageOverlay service to avoid
@@ -15,8 +15,8 @@ import { ENV } from "./env";
 
 export type GenerateImageOptions = {
   prompt: string;
-  size?: "1024x1024" | "1792x1024" | "1024x1792";
-  quality?: "standard" | "hd";
+  size?: "1024x1024" | "1536x1024" | "1024x1536" | "auto";
+  quality?: "low" | "medium" | "high";
 };
 
 export type GenerateImageResponse = {
@@ -25,7 +25,7 @@ export type GenerateImageResponse = {
 };
 
 /**
- * Sanitize the prompt to prevent DALL-E from rendering text in the image.
+ * Sanitize the prompt to prevent the model from rendering text in the image.
  * Appends explicit instructions to avoid any text, letters, or words.
  */
 function sanitizePrompt(prompt: string): string {
@@ -54,19 +54,18 @@ export async function generateImage(
       "Authorization": `Bearer ${ENV.openaiApiKey}`,
     },
     body: JSON.stringify({
-      model: "dall-e-3",
+      model: "gpt-image-1",
       prompt: sanitizedPrompt,
       n: 1,
       size: options.size || "1024x1024",
-      quality: options.quality || "standard",
-      response_format: "b64_json",
+      quality: options.quality || "medium",
     }),
   });
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
     throw new Error(
-      `DALL-E image generation failed (${response.status} ${response.statusText}): ${errorText}`
+      `Image generation failed (${response.status} ${response.statusText}): ${errorText}`
     );
   }
 
@@ -75,7 +74,7 @@ export async function generateImage(
   };
 
   if (!result.data || result.data.length === 0) {
-    throw new Error("DALL-E returned no image data");
+    throw new Error("Image generation returned no image data");
   }
 
   const base64Data = result.data[0].b64_json;

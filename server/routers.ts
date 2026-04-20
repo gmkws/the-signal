@@ -432,7 +432,7 @@ const aiRouter = router({
         bgBase64 = imgResult.base64 || "";
       } catch (err: any) {
         // Use a solid gradient fallback (no background image)
-        console.warn("[SmartImage] DALL-E failed, using gradient fallback:", err.message);
+        console.warn("[SmartImage] Image generation failed, using gradient fallback:", err.message);
       }
 
       // Render composite image with text overlay

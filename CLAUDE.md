@@ -61,7 +61,7 @@ location selector dialog, following the same layout as the Meta OAuth card.
 |---|---|
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
-| `OPENAI_API_KEY` | AI content generation + DALL-E |
+| `OPENAI_API_KEY` | AI content generation + image generation (gpt-image-1) |
 | `DATABASE_URL` | MySQL connection string |
 | `R2_*` | Cloudflare R2 image storage |
 | `STRIPE_SECRET_KEY` | Stripe billing (optional) |
@@ -70,6 +70,26 @@ location selector dialog, following the same layout as the Meta OAuth card.
 
 ### 321 Trailers — Inventory Integration
 Pending development. Waiting on the specific name of the client's dealer management software to determine if we can use a REST API, an XML/CSV inventory feed, or if web scraping is required to pull trailer inventory into The Signal's auto-posting engine.
+
+## Image Generation
+
+### Model: `gpt-image-1` (migrated 2026-04-20)
+Replaced `dall-e-3` due to OpenAI deprecation effective 2025-05-12.
+
+**Files changed:**
+- `server/_core/imageGeneration.ts` — model, quality enum, size enum, removed `response_format`
+- `server/services/contentEngine.ts` — `quality: "hd"` → `quality: "high"`
+
+**API diff from dall-e-3:**
+| Parameter | Old (dall-e-3) | New (gpt-image-1) |
+|---|---|---|
+| `model` | `"dall-e-3"` | `"gpt-image-1"` |
+| `quality` | `"standard" \| "hd"` | `"low" \| "medium" \| "high"` |
+| `size` (landscape) | `"1792x1024"` | `"1536x1024"` |
+| `size` (portrait) | `"1024x1792"` | `"1024x1536"` |
+| `response_format` | `"b64_json"` (explicit) | removed — always base64 |
+
+Endpoint (`https://api.openai.com/v1/images/generations`) and response shape (`data[0].b64_json`) are unchanged.
 
 ## Focus Bug (resolved in working tree)
 The `formatForDisplay` helper in `client/src/components/PostPreviewPanel.tsx`
