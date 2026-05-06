@@ -1728,7 +1728,7 @@ const metaRouter = router({
       const url = new URL(`https://www.facebook.com/${GRAPH_API_OAUTH_VERSION}/dialog/oauth`);
       url.searchParams.set("client_id", META_APP_ID);
       url.searchParams.set("redirect_uri", input.redirectUri);
-      url.searchParams.set("scope", "instagram_basic,instagram_content_publish,pages_show_list,pages_manage_posts,pages_read_engagement");
+      url.searchParams.set("scope", "instagram_business_basic,instagram_business_content_publish,pages_show_list,pages_manage_posts,pages_read_engagement");
       url.searchParams.set("response_type", "code");
       url.searchParams.set("state", input.brandId.toString());
       return { url: url.toString() };
