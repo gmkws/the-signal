@@ -91,6 +91,23 @@ Replaced `dall-e-3` due to OpenAI deprecation effective 2025-05-12.
 
 Endpoint (`https://api.openai.com/v1/images/generations`) and response shape (`data[0].b64_json`) are unchanged.
 
+## Privacy Policy Page (added 2026-05-06)
+
+Added a public `/privacy` route required for Meta Developer portal submission.
+
+**Files changed:**
+- `client/src/pages/PrivacyPolicy.tsx` — standalone page, no DashboardLayout wrapper
+- `client/src/App.tsx` — route added in both the unauthenticated and authenticated
+  branches of `AuthRouter`, before the catch-all, so it renders without the dashboard shell
+
+**Live URL:** `https://thesignal.gmkwebsolutions.com/privacy`
+
+Policy covers: third-party OAuth (Facebook, Google, LinkedIn), social-posting data usage,
+data retention schedules, security measures, and user rights. Owned by GMK Web Solutions.
+Contact email in the policy: `privacy@gmkwebsolutions.com`.
+
+---
+
 ## Focus Bug (resolved in working tree)
 The `formatForDisplay` helper in `client/src/components/PostPreviewPanel.tsx`
 used `key={i}` (index) for spans. When the hashtag count changed mid-typing,

@@ -39,6 +39,7 @@ import ClientWelcome from "./pages/client/Welcome";
 // Landing
 import Home from "./pages/Home";
 import Onboarding from "./pages/Onboarding";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
 import AdminOnboardingApproval from "./pages/admin/OnboardingApproval";
 import AdminLeads from "./pages/admin/Leads";
 
@@ -86,6 +87,7 @@ function AuthRouter() {
         <Route path="/signup" component={Signup} />
         <Route path="/reset-password" component={ResetPassword} />
         <Route path="/onboarding" component={Onboarding} />
+        <Route path="/privacy" component={PrivacyPolicy} />
         <Route><Redirect to="/login" /></Route>
       </Switch>
     );
@@ -102,6 +104,9 @@ function AuthRouter() {
 
       {/* Onboarding — accessible to all authenticated users */}
       <Route path="/onboarding" component={Onboarding} />
+
+      {/* Public legal pages — accessible without DashboardLayout */}
+      <Route path="/privacy" component={PrivacyPolicy} />
 
       {/* All authenticated routes wrapped in DashboardLayout */}
       <Route>
