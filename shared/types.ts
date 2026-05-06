@@ -143,4 +143,4 @@ export const CTA_TYPE_LABELS: Record<CtaType, string> = {
 // ── Constants ──────────────────────────────────────────────────────────────
 
 export const MAX_BRANDS = 5;
-export const META_APP_ID = "868128566280243";
+export const META_APP_ID = "1660350928634461";
