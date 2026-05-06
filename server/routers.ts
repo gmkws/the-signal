@@ -7,9 +7,10 @@ import { TRPCError } from "@trpc/server";
 import * as db from "./db";
 import { generatePost, generatePostImage, pickContentType, generateBatch, buildBatchSlots, generateCarouselPost } from "./services/contentEngine";
 import { buildGBPOAuthUrl, exchangeGoogleCode, getGBPAccounts, getGBPLocations } from "./services/googleBusiness";
+import { exchangeForLongLivedToken, getUserPages, getInstagramAccount } from "./services/meta";
 import { generateCaseStudy } from "./_core/llm";
 import type { ContentFormat, ContentSourceInfo } from "./services/contentEngine";
-import { MAX_BRANDS } from "@shared/types";
+import { MAX_BRANDS, META_APP_ID } from "@shared/types";
 import { validateShopifyConnection, fetchShopifyProducts, transformShopifyProduct, fetchShopifyCollections } from "./services/shopify";
 import { buildPromoSchedule, generatePromoPostContent, getEventOccurrences } from "./services/eventPromotion";
 import { handlePostFailure, checkBrandTokenHealth, checkUnapprovedPosts, handleContentGenerationFailure, generateFallbackPost } from "./services/guardrails";
@@ -1713,6 +1714,77 @@ const gbpRouter = router({
     }),
 });
 
+// ── Meta OAuth Router ─────────────────────────────────────────────────────
+const GRAPH_API_OAUTH_VERSION = "v19.0";
+
+const metaRouter = router({
+  /**
+   * Build a Facebook OAuth authorisation URL. The brandId is embedded in
+   * the `state` parameter so the callback can pass it back via postMessage.
+   */
+  getOAuthUrl: adminProcedure
+    .input(z.object({ brandId: z.number(), redirectUri: z.string() }))
+    .query(({ input }) => {
+      const url = new URL(`https://www.facebook.com/${GRAPH_API_OAUTH_VERSION}/dialog/oauth`);
+      url.searchParams.set("client_id", META_APP_ID);
+      url.searchParams.set("redirect_uri", input.redirectUri);
+      url.searchParams.set("scope", "pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish");
+      url.searchParams.set("response_type", "code");
+      url.searchParams.set("state", input.brandId.toString());
+      return { url: url.toString() };
+    }),
+
+  /**
+   * Exchange the one-time authorisation code for a long-lived user token,
+   * then return all Facebook Pages the user manages along with any linked
+   * Instagram Business Accounts.
+   */
+  handleCallback: adminProcedure
+    .input(z.object({ brandId: z.number(), code: z.string(), redirectUri: z.string() }))
+    .mutation(async ({ input }) => {
+      const appSecret = process.env.META_APP_SECRET;
+      if (!appSecret) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "META_APP_SECRET is not configured on the server" });
+      }
+
+      // Step 1: exchange auth code → short-lived user access token
+      const tokenUrl = new URL(`https://graph.facebook.com/${GRAPH_API_OAUTH_VERSION}/oauth/access_token`);
+      tokenUrl.searchParams.set("client_id", META_APP_ID);
+      tokenUrl.searchParams.set("client_secret", appSecret);
+      tokenUrl.searchParams.set("redirect_uri", input.redirectUri);
+      tokenUrl.searchParams.set("code", input.code);
+
+      const tokenRes = await fetch(tokenUrl.toString());
+      if (!tokenRes.ok) {
+        const err = await tokenRes.json().catch(() => ({})) as Record<string, unknown>;
+        throw new TRPCError({ code: "BAD_REQUEST", message: `Meta token exchange failed: ${JSON.stringify(err)}` });
+      }
+      const { access_token: shortLivedToken } = await tokenRes.json() as { access_token: string };
+
+      // Step 2: extend to a long-lived user token (~60 days)
+      const longLived = await exchangeForLongLivedToken(shortLivedToken, META_APP_ID, appSecret);
+
+      // Step 3: fetch all Facebook Pages the user administers
+      const pages = await getUserPages(longLived.access_token);
+      if (!pages.length) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "No Facebook Pages found. Ensure you are an admin of at least one Page.",
+        });
+      }
+
+      // Step 4: enrich each page with its linked Instagram Business Account
+      const enrichedPages = await Promise.all(
+        pages.map(async (page) => {
+          const instagramAccount = await getInstagramAccount(page.id, page.access_token).catch(() => null);
+          return { ...page, instagramAccount };
+        })
+      );
+
+      return { pages: enrichedPages };
+    }),
+});
+
 // ── Main App Router ────────────────────────────────────────────────────────
 export const appRouter = router({
   system: systemRouter,
@@ -1738,6 +1810,7 @@ export const appRouter = router({
   onboarding: onboardingRouter,
   leads: leadsRouter,
   gbp: gbpRouter,
+  meta: metaRouter,
 });
 
 export type AppRouter = typeof appRouter;

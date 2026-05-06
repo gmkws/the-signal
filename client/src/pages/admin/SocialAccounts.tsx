@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { META_APP_ID } from "@shared/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +11,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Globe, Plus, Trash2, Facebook, Instagram, Link2, ShoppingBag, RefreshCw, Package, Store, MapPin, Loader2 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
-import { META_APP_ID } from "@shared/types";
 
 export default function AdminSocial() {
   const utils = trpc.useUtils();
@@ -30,6 +30,12 @@ export default function AdminSocial() {
   const [gbpLocations, setGbpLocations] = useState<Array<{ name: string; title: string; accountName: string }>>([]);
   const [gbpPendingTokens, setGbpPendingTokens] = useState<{ accessToken: string; refreshToken: string | null; expiresAt: string } | null>(null);
   const [gbpConnecting, setGbpConnecting] = useState(false);
+
+  // Meta (Facebook / Instagram) OAuth state
+  type MetaPage = { id: string; name: string; access_token: string; category?: string; instagramAccount?: { id: string; name?: string; username?: string } | null };
+  const [metaPageOpen, setMetaPageOpen] = useState(false);
+  const [metaPages, setMetaPages] = useState<MetaPage[]>([]);
+  const [metaConnecting, setMetaConnecting] = useState(false);
 
   const brandId = selectedBrand ? parseInt(selectedBrand) : undefined;
   const { data: accounts, isLoading } = trpc.social.listByBrand.useQuery(
@@ -88,6 +94,29 @@ export default function AdminSocial() {
     { enabled: false } // only fetched on demand
   );
 
+  const getMetaOAuthUrl = trpc.meta.getOAuthUrl.useQuery(
+    { brandId: brandId!, redirectUri: window.location.origin + "/api/meta/callback" },
+    { enabled: false }
+  );
+
+  const handleMetaCallback = trpc.meta.handleCallback.useMutation({
+    onSuccess: (data) => {
+      setMetaPages(data.pages as MetaPage[]);
+      setMetaConnecting(false);
+      if (data.pages.length === 0) {
+        toast.error("No Facebook Pages found on this account");
+      } else if (data.pages.length === 1) {
+        handleMetaPageConnect(data.pages[0] as MetaPage);
+      } else {
+        setMetaPageOpen(true);
+      }
+    },
+    onError: (e) => {
+      setMetaConnecting(false);
+      toast.error(`Meta connect failed: ${e.message}`);
+    },
+  });
+
   const handleGbpCallback = trpc.gbp.handleCallback.useMutation({
     onSuccess: (data) => {
       setGbpPendingTokens({ accessToken: data.accessToken, refreshToken: data.refreshToken, expiresAt: data.expiresAt });
@@ -142,7 +171,7 @@ export default function AdminSocial() {
     });
   }, [brandId, gbpConnect]);
 
-  // Listen for the OAuth popup postMessage
+  // Listen for OAuth popup postMessage (both GBP and Meta)
   useEffect(() => {
     const handler = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
@@ -158,11 +187,20 @@ export default function AdminSocial() {
       } else if (data.type === "GBP_OAUTH_ERROR") {
         setGbpConnecting(false);
         toast.error(`Google OAuth error: ${data.error}`);
+      } else if (data.type === "META_OAUTH_CODE" && data.code && brandId) {
+        handleMetaCallback.mutate({
+          brandId,
+          code: data.code,
+          redirectUri: data.redirectUri || (window.location.origin + "/api/meta/callback"),
+        });
+      } else if (data.type === "META_OAUTH_ERROR") {
+        setMetaConnecting(false);
+        toast.error(`Facebook OAuth error: ${data.error}`);
       }
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [brandId, handleGbpCallback]);
+  }, [brandId, handleGbpCallback, handleMetaCallback]);
 
   const handleGbpOAuthClick = async () => {
     if (!brandId) return;
@@ -175,6 +213,46 @@ export default function AdminSocial() {
     } catch (e: any) {
       setGbpConnecting(false);
       toast.error(`Failed to start Google OAuth: ${e.message}`);
+    }
+  };
+
+  const handleMetaPageConnect = useCallback((page: MetaPage) => {
+    if (!brandId) return;
+    // Always connect the Facebook Page
+    connectAccount.mutate({
+      brandId,
+      platform: "facebook",
+      platformAccountId: page.id,
+      accountName: page.name,
+      accessToken: page.access_token,
+      pageId: page.id,
+    });
+    // Auto-connect linked Instagram Business Account if present
+    if (page.instagramAccount) {
+      connectAccount.mutate({
+        brandId,
+        platform: "instagram",
+        platformAccountId: page.instagramAccount.id,
+        accountName: page.instagramAccount.username || page.instagramAccount.name || page.name,
+        accessToken: page.access_token,
+        instagramBusinessId: page.instagramAccount.id,
+      });
+    }
+    setMetaPageOpen(false);
+    setMetaPages([]);
+  }, [brandId, connectAccount]);
+
+  const handleMetaOAuthClick = async () => {
+    if (!brandId) return;
+    setMetaConnecting(true);
+    try {
+      const result = await getMetaOAuthUrl.refetch();
+      const url = result.data?.url;
+      if (!url) throw new Error("Could not get Meta OAuth URL");
+      window.open(url, "meta_oauth", "width=600,height=700,noopener");
+    } catch (e: any) {
+      setMetaConnecting(false);
+      toast.error(`Failed to start Facebook OAuth: ${e.message}`);
     }
   };
 
@@ -208,7 +286,6 @@ export default function AdminSocial() {
     });
   };
 
-  const oauthUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${META_APP_ID}&redirect_uri=${encodeURIComponent(window.location.origin + "/api/meta/callback")}&scope=pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish&response_type=code`;
 
   return (
     <div className="space-y-6">
@@ -256,16 +333,14 @@ export default function AdminSocial() {
                     <Button
                       variant="outline" size="sm"
                       className="gap-2 border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
-                      onClick={() => window.open(oauthUrl, "_blank", "width=600,height=700")}
+                      onClick={handleMetaOAuthClick}
+                      disabled={metaConnecting || handleMetaCallback.isPending}
                     >
-                      <Facebook className="h-4 w-4" /> Connect Facebook via OAuth
-                    </Button>
-                    <Button
-                      variant="outline" size="sm"
-                      className="gap-2 border-pink-500/30 text-pink-400 hover:bg-pink-500/10"
-                      onClick={() => window.open(oauthUrl, "_blank", "width=600,height=700")}
-                    >
-                      <Instagram className="h-4 w-4" /> Connect Instagram via OAuth
+                      {(metaConnecting || handleMetaCallback.isPending) ? (
+                        <><Loader2 className="h-4 w-4 animate-spin" /> Connecting...</>
+                      ) : (
+                        <><Facebook className="h-4 w-4" /> Connect Facebook &amp; Instagram</>
+                      )}
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground">
@@ -578,6 +653,45 @@ export default function AdminSocial() {
               >
                 <p className="text-sm font-medium">{loc.title}</p>
                 <p className="text-xs text-muted-foreground mt-0.5 truncate">{loc.name}</p>
+              </button>
+            ))}
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Meta Page Selector Dialog */}
+      <Dialog open={metaPageOpen} onOpenChange={setMetaPageOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Facebook className="h-5 w-5 text-blue-500" />
+              Select a Facebook Page
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Choose which Page to connect. Facebook and any linked Instagram Business Account will both be connected automatically.
+          </p>
+          <div className="space-y-2 max-h-72 overflow-y-auto">
+            {metaPages.map((page) => (
+              <button
+                key={page.id}
+                className="w-full text-left px-4 py-3 rounded-lg border border-border hover:border-primary/50 hover:bg-secondary/50 transition-colors"
+                onClick={() => handleMetaPageConnect(page)}
+                disabled={connectAccount.isPending}
+              >
+                <p className="text-sm font-medium">{page.name}</p>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-xs text-muted-foreground">Facebook Page</span>
+                  {page.instagramAccount && (
+                    <span className="text-xs text-pink-400 flex items-center gap-1">
+                      <Instagram className="h-3 w-3" />
+                      {page.instagramAccount.username || page.instagramAccount.name || "Instagram"}
+                    </span>
+                  )}
+                </div>
               </button>
             ))}
           </div>

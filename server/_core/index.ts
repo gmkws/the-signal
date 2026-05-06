@@ -200,6 +200,41 @@ async function startServer() {
 </html>`);
   });
 
+  // ── Meta (Facebook / Instagram) OAuth Callback ──────────────────────────
+  // Facebook redirects here after the user approves permissions.
+  // We pass the code back to the opener window via postMessage so the
+  // frontend can complete the token exchange through the tRPC meta router.
+  app.get("/api/meta/callback", (req: express.Request, res: express.Response) => {
+    const code  = typeof req.query.code  === "string" ? req.query.code  : "";
+    const state = typeof req.query.state === "string" ? req.query.state : "";
+    const error = typeof req.query.error === "string" ? req.query.error : "";
+
+    const payload = error
+      ? JSON.stringify({ type: "META_OAUTH_ERROR", error })
+      : JSON.stringify({ type: "META_OAUTH_CODE", code, state });
+
+    res.setHeader("Content-Type", "text/html");
+    res.send(`<!DOCTYPE html>
+<html>
+<head><title>Connecting Facebook...</title></head>
+<body>
+<p style="font-family:sans-serif;text-align:center;padding:2rem">
+  Connecting to Facebook — this window will close automatically.
+</p>
+<script>
+  try {
+    var data = ${payload};
+    data.redirectUri = window.location.origin + '/api/meta/callback';
+    if (window.opener) {
+      window.opener.postMessage(data, window.location.origin);
+    }
+  } catch (e) {}
+  window.close();
+</script>
+</body>
+</html>`);
+  });
+
   // ── Meta Webhook (Instagram DMs + Facebook Messenger) ────────────────────
   app.get("/api/webhooks/meta", (req: express.Request, res: express.Response) => {
     const mode = req.query["hub.mode"];
