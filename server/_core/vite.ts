@@ -40,6 +40,9 @@ export async function setupVite(app: Express, server: Server) {
 
   app.use(vite.middlewares);
   app.use("*", async (req, res, next) => {
+    // Never catch API routes — they must be handled by the registered route handlers above.
+    if (req.originalUrl.startsWith("/api/")) return next();
+
     const url = req.originalUrl;
 
     try {
@@ -76,10 +79,20 @@ export function serveStatic(app: Express) {
     );
   }
 
-  app.use(express.static(distPath));
+  // Serve static assets only for non-API paths so express.static never
+  // swallows an unmatched /api/* request before it reaches Express's 404 handler.
+  app.use((req, res, next) => {
+    if (req.path.startsWith("/api/")) return next();
+    return express.static(distPath)(req, res, next);
+  });
 
-  // fall through to index.html if the file doesn't exist
+  // SPA catch-all — only for non-API paths.
+  // Unmatched /api/* requests fall through and get Express's default 404,
+  // which is far easier to diagnose than silently receiving index.html.
   app.use("*", (_req, res) => {
+    if (_req.originalUrl.startsWith("/api/")) {
+      return res.status(404).json({ error: "API route not found" });
+    }
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }
