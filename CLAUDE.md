@@ -51,6 +51,14 @@ location selector dialog, following the same layout as the Meta OAuth card.
 5. Frontend calls `trpc.gbp.handleCallback({ brandId, code, redirectUri })` → tokens + locations.
 6. Admin selects a location → `trpc.gbp.connect(...)` saves the social account.
 
+### CRITICAL — `noopener` MUST NOT be used in `window.open` for OAuth popups
+`noopener` sets `window.opener = null` inside the popup, silently breaking the entire
+`postMessage` relay. All three OAuth popups (Facebook, Instagram, GBP) must open without it:
+```js
+window.open(url, "fb_oauth", "width=600,height=700");  // ✅ correct
+window.open(url, "fb_oauth", "width=600,height=700,noopener");  // ❌ breaks postMessage
+```
+
 ## Pattern Reference
 - Meta (Facebook / Instagram): `server/services/meta.ts`
 - Google Business: `server/services/googleBusiness.ts` (same raw-fetch pattern)
@@ -95,7 +103,7 @@ Replaced `dall-e-3` due to OpenAI deprecation effective 2025-05-12.
 
 Endpoint (`https://api.openai.com/v1/images/generations`) and response shape (`data[0].b64_json`) are unchanged.
 
-## Meta OAuth Architecture — Split-App Dual-Flow (updated 2026-05-07)
+## Meta OAuth Architecture — Split-App Dual-Flow (updated 2026-05-07, debugging 2026-05-07)
 
 Two fully independent OAuth flows using **separate app credentials**. Facebook uses the
 Main Production Meta App; Instagram uses the dedicated "Instagram API with Instagram Login"
@@ -154,6 +162,20 @@ Added a public `/privacy` route required for Meta Developer portal submission.
 Policy covers: third-party OAuth (Facebook, Google, LinkedIn), social-posting data usage,
 data retention schedules, security measures, and user rights. Owned by GMK Web Solutions.
 Contact email in the policy: `privacy@gmkwebsolutions.com`.
+
+---
+
+## OAuth postMessage Debug State (as of 2026-05-07)
+
+Temporary diagnostics are in place — **remove when the flow is confirmed working:**
+
+| File | Diagnostic | Remove when |
+|---|---|---|
+| `server/_core/index.ts` | `🚨 BACKEND HIT` + `🚨 BACKEND SUCCESS` logs in FB callback | Flow confirmed working |
+| `server/_core/index.ts` | `🚨 [TOP LEVEL] API Request Intercepted` nuclear intercept | Flow confirmed working |
+| `server/_core/index.ts` | Popup heartbeat `console.log('Sending message to opener:', ...)` in HTML `<script>` | Flow confirmed working |
+| `client/src/pages/admin/SocialAccounts.tsx` | `🚨 POSTMESSAGE RECEIVED` log | Flow confirmed working |
+| `client/src/pages/admin/SocialAccounts.tsx` | Origin check commented out (`event.origin !== window.location.origin`) | **Re-enable this check** once messages are confirmed arriving |
 
 ---
 
