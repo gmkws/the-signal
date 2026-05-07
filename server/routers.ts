@@ -1718,7 +1718,7 @@ const gbpRouter = router({
 const GRAPH_API_OAUTH_VERSION = "v19.0";
 const META_REDIRECT_URI = "https://thesignal.gmkwebsolutions.com/api/meta/callback";
 const META_CONFIG_ID = "2079086999617974";
-const META_OAUTH_SCOPES = "public_profile,instagram_basic,instagram_content_publish,pages_show_list,pages_manage_posts,pages_read_engagement";
+const META_OAUTH_SCOPES = "public_profile,instagram_business_basic,instagram_business_content_publish,pages_show_list,pages_manage_posts,pages_read_engagement";
 
 const metaRouter = router({
   /**
