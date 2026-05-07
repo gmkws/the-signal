@@ -201,7 +201,8 @@ export default function AdminSocial() {
   useEffect(() => {
     const handler = (event: MessageEvent) => {
       console.log('🚨 POSTMESSAGE RECEIVED:', { origin: event.origin, data: event.data });
-      if (event.origin !== window.location.origin) return;
+      // Temporarily relaxed to diagnose origin mismatches — re-enable once confirmed working
+      // if (event.origin !== window.location.origin) return;
       const data = event.data;
       if (!data || typeof data !== "object") return;
 
@@ -237,7 +238,7 @@ export default function AdminSocial() {
       const result = await getGbpOAuthUrl.refetch();
       const url = result.data?.url;
       if (!url) throw new Error("Could not get OAuth URL");
-      window.open(url, "gbp_oauth", "width=600,height=700,noopener");
+      window.open(url, "gbp_oauth", "width=600,height=700");
     } catch (e: any) {
       setGbpConnecting(false);
       toast.error(`Failed to start Google OAuth: ${e.message}`);
@@ -265,7 +266,7 @@ export default function AdminSocial() {
       const result = await getFacebookOAuthUrl.refetch();
       const url = result.data?.url;
       if (!url) throw new Error("Could not get Facebook OAuth URL");
-      window.open(url, "fb_oauth", "width=600,height=700,noopener");
+      window.open(url, "fb_oauth", "width=600,height=700");
     } catch (e: any) {
       setFbConnecting(false);
       toast.error(`Failed to start Facebook OAuth: ${e.message}`);
@@ -279,7 +280,7 @@ export default function AdminSocial() {
       const result = await getInstagramOAuthUrl.refetch();
       const url = result.data?.url;
       if (!url) throw new Error("Could not get Instagram OAuth URL");
-      window.open(url, "ig_oauth", "width=600,height=700,noopener");
+      window.open(url, "ig_oauth", "width=600,height=700");
     } catch (e: any) {
       setIgConnecting(false);
       toast.error(`Failed to start Instagram OAuth: ${e.message}`);

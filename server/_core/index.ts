@@ -235,8 +235,10 @@ async function startServer() {
 <script>
   try {
     var data = ${payload};
+    console.log('Sending message to opener:', window.location.origin, 'opener present:', !!window.opener, 'data:', JSON.stringify(data));
     if (window.opener) { window.opener.postMessage(data, window.location.origin); }
-  } catch (e) {}
+    else { console.warn('window.opener is null — noopener may still be set or popup was opened without a reference'); }
+  } catch (e) { console.error('postMessage error:', e); }
   window.close();
 </script>
 </body>
