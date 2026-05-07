@@ -1715,37 +1715,35 @@ const gbpRouter = router({
 });
 
 // ── Meta OAuth Router ─────────────────────────────────────────────────────
+// Two independent flows: Facebook (Graph API) and Instagram (Instagram API).
+// They share the same App ID / Secret but use different OAuth endpoints,
+// redirect URIs, and scope sets to avoid conflicts.
 const GRAPH_API_OAUTH_VERSION = "v19.0";
-const META_REDIRECT_URI = "https://thesignal.gmkwebsolutions.com/api/meta/callback";
 const META_CONFIG_ID = "2079086999617974";
-const META_OAUTH_SCOPES = "public_profile,instagram_business_basic,instagram_business_content_publish,pages_show_list,pages_manage_posts,pages_read_engagement";
+
+const META_FACEBOOK_REDIRECT_URI = "https://thesignal.gmkwebsolutions.com/api/meta/facebook/callback";
+const META_FACEBOOK_SCOPES = "public_profile,pages_show_list,pages_manage_posts,pages_read_engagement";
+
+const META_INSTAGRAM_REDIRECT_URI = "https://thesignal.gmkwebsolutions.com/api/meta/instagram/callback";
+const META_INSTAGRAM_SCOPES = "instagram_business_basic,instagram_business_content_publish";
 
 const metaRouter = router({
-  /**
-   * Build a Facebook OAuth authorisation URL. The brandId is embedded in
-   * the `state` parameter so the callback can pass it back via postMessage.
-   * redirect_uri is hardcoded to the production URL so it always matches
-   * the value registered in Meta's app settings.
-   */
-  getOAuthUrl: adminProcedure
+  // ── Facebook Flow ──────────────────────────────────────────────────────
+
+  getFacebookOAuthUrl: adminProcedure
     .input(z.object({ brandId: z.number() }))
     .query(({ input }) => {
       const url = new URL(`https://www.facebook.com/${GRAPH_API_OAUTH_VERSION}/dialog/oauth`);
       url.searchParams.set("client_id", META_APP_ID);
       url.searchParams.set("config_id", META_CONFIG_ID);
-      url.searchParams.set("redirect_uri", META_REDIRECT_URI);
-      url.searchParams.set("scope", META_OAUTH_SCOPES);
+      url.searchParams.set("redirect_uri", META_FACEBOOK_REDIRECT_URI);
+      url.searchParams.set("scope", META_FACEBOOK_SCOPES);
       url.searchParams.set("response_type", "code");
       url.searchParams.set("state", input.brandId.toString());
       return { url: url.toString() };
     }),
 
-  /**
-   * Exchange the one-time authorisation code for a long-lived user token,
-   * then return all Facebook Pages the user manages along with any linked
-   * Instagram Business Accounts.
-   */
-  handleCallback: adminProcedure
+  handleFacebookCallback: adminProcedure
     .input(z.object({ brandId: z.number(), code: z.string() }))
     .mutation(async ({ input }) => {
       const appSecret = process.env.META_APP_SECRET;
@@ -1753,41 +1751,105 @@ const metaRouter = router({
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "META_APP_SECRET is not configured on the server" });
       }
 
-      // Step 1: exchange auth code → short-lived user access token
+      // Exchange code → short-lived user token
       const tokenUrl = new URL(`https://graph.facebook.com/${GRAPH_API_OAUTH_VERSION}/oauth/access_token`);
       tokenUrl.searchParams.set("client_id", META_APP_ID);
       tokenUrl.searchParams.set("client_secret", appSecret);
-      tokenUrl.searchParams.set("redirect_uri", META_REDIRECT_URI);
+      tokenUrl.searchParams.set("redirect_uri", META_FACEBOOK_REDIRECT_URI);
       tokenUrl.searchParams.set("code", input.code);
 
       const tokenRes = await fetch(tokenUrl.toString());
       if (!tokenRes.ok) {
         const err = await tokenRes.json().catch(() => ({})) as Record<string, unknown>;
-        throw new TRPCError({ code: "BAD_REQUEST", message: `Meta token exchange failed: ${JSON.stringify(err)}` });
+        throw new TRPCError({ code: "BAD_REQUEST", message: `Facebook token exchange failed: ${JSON.stringify(err)}` });
       }
       const { access_token: shortLivedToken } = await tokenRes.json() as { access_token: string };
 
-      // Step 2: extend to a long-lived user token (~60 days)
+      // Extend to long-lived user token (~60 days)
       const longLived = await exchangeForLongLivedToken(shortLivedToken, META_APP_ID, appSecret);
 
-      // Step 3: fetch all Facebook Pages the user administers
+      // Fetch pages this user administers
       const pages = await getUserPages(longLived.access_token);
       if (!pages.length) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "No Facebook Pages found. Ensure you are an admin of at least one Page.",
-        });
+        throw new TRPCError({ code: "NOT_FOUND", message: "No Facebook Pages found. Ensure you are an admin of at least one Page." });
       }
 
-      // Step 4: enrich each page with its linked Instagram Business Account
-      const enrichedPages = await Promise.all(
-        pages.map(async (page) => {
-          const instagramAccount = await getInstagramAccount(page.id, page.access_token).catch(() => null);
-          return { ...page, instagramAccount };
-        })
-      );
+      return { pages };
+    }),
 
-      return { pages: enrichedPages };
+  // ── Instagram Flow ─────────────────────────────────────────────────────
+
+  getInstagramOAuthUrl: adminProcedure
+    .input(z.object({ brandId: z.number() }))
+    .query(({ input }) => {
+      const url = new URL("https://www.instagram.com/oauth/authorize");
+      url.searchParams.set("client_id", META_APP_ID);
+      url.searchParams.set("redirect_uri", META_INSTAGRAM_REDIRECT_URI);
+      url.searchParams.set("scope", META_INSTAGRAM_SCOPES);
+      url.searchParams.set("response_type", "code");
+      url.searchParams.set("state", input.brandId.toString());
+      return { url: url.toString() };
+    }),
+
+  handleInstagramCallback: adminProcedure
+    .input(z.object({ brandId: z.number(), code: z.string() }))
+    .mutation(async ({ input }) => {
+      const appSecret = process.env.META_APP_SECRET;
+      if (!appSecret) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "META_APP_SECRET is not configured on the server" });
+      }
+
+      // Step 1: exchange code → short-lived IG user token (form-encoded POST)
+      const tokenBody = new URLSearchParams();
+      tokenBody.set("client_id", META_APP_ID);
+      tokenBody.set("client_secret", appSecret);
+      tokenBody.set("grant_type", "authorization_code");
+      tokenBody.set("redirect_uri", META_INSTAGRAM_REDIRECT_URI);
+      tokenBody.set("code", input.code);
+
+      const tokenRes = await fetch("https://api.instagram.com/oauth/access_token", {
+        method: "POST",
+        body: tokenBody,
+      });
+      if (!tokenRes.ok) {
+        const err = await tokenRes.json().catch(() => ({})) as Record<string, unknown>;
+        throw new TRPCError({ code: "BAD_REQUEST", message: `Instagram token exchange failed: ${JSON.stringify(err)}` });
+      }
+      const { access_token: shortLivedToken } = await tokenRes.json() as { access_token: string; user_id: number };
+
+      // Step 2: exchange short-lived → long-lived IG token (~60 days)
+      const longLivedUrl = new URL("https://graph.instagram.com/access_token");
+      longLivedUrl.searchParams.set("grant_type", "ig_exchange_token");
+      longLivedUrl.searchParams.set("client_secret", appSecret);
+      longLivedUrl.searchParams.set("access_token", shortLivedToken);
+
+      const longLivedRes = await fetch(longLivedUrl.toString());
+      if (!longLivedRes.ok) {
+        const err = await longLivedRes.json().catch(() => ({})) as Record<string, unknown>;
+        throw new TRPCError({ code: "BAD_REQUEST", message: `Instagram long-lived token exchange failed: ${JSON.stringify(err)}` });
+      }
+      const { access_token: longLivedToken } = await longLivedRes.json() as { access_token: string };
+
+      // Step 3: fetch IG user profile
+      const userUrl = new URL("https://graph.instagram.com/me");
+      userUrl.searchParams.set("fields", "id,name,username");
+      userUrl.searchParams.set("access_token", longLivedToken);
+
+      const userRes = await fetch(userUrl.toString());
+      if (!userRes.ok) {
+        const err = await userRes.json().catch(() => ({})) as Record<string, unknown>;
+        throw new TRPCError({ code: "BAD_REQUEST", message: `Failed to fetch Instagram profile: ${JSON.stringify(err)}` });
+      }
+      const igUser = await userRes.json() as { id: string; name?: string; username?: string };
+
+      return {
+        account: {
+          id: igUser.id,
+          name: igUser.name || igUser.username || "Instagram Account",
+          username: igUser.username,
+          accessToken: longLivedToken,
+        },
+      };
     }),
 });
 

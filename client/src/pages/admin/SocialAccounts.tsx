@@ -31,11 +31,14 @@ export default function AdminSocial() {
   const [gbpPendingTokens, setGbpPendingTokens] = useState<{ accessToken: string; refreshToken: string | null; expiresAt: string } | null>(null);
   const [gbpConnecting, setGbpConnecting] = useState(false);
 
-  // Meta (Facebook / Instagram) OAuth state
-  type MetaPage = { id: string; name: string; access_token: string; category?: string; instagramAccount?: { id: string; name?: string; username?: string } | null };
-  const [metaPageOpen, setMetaPageOpen] = useState(false);
-  const [metaPages, setMetaPages] = useState<MetaPage[]>([]);
-  const [metaConnecting, setMetaConnecting] = useState(false);
+  // Facebook OAuth state
+  type FbPage = { id: string; name: string; access_token: string; category?: string };
+  const [fbPageOpen, setFbPageOpen] = useState(false);
+  const [fbPages, setFbPages] = useState<FbPage[]>([]);
+  const [fbConnecting, setFbConnecting] = useState(false);
+
+  // Instagram OAuth state
+  const [igConnecting, setIgConnecting] = useState(false);
 
   const brandId = selectedBrand ? parseInt(selectedBrand) : undefined;
   const { data: accounts, isLoading } = trpc.social.listByBrand.useQuery(
@@ -94,26 +97,50 @@ export default function AdminSocial() {
     { enabled: false } // only fetched on demand
   );
 
-  const getMetaOAuthUrl = trpc.meta.getOAuthUrl.useQuery(
+  const getFacebookOAuthUrl = trpc.meta.getFacebookOAuthUrl.useQuery(
     { brandId: brandId! },
     { enabled: false }
   );
 
-  const handleMetaCallback = trpc.meta.handleCallback.useMutation({
+  const getInstagramOAuthUrl = trpc.meta.getInstagramOAuthUrl.useQuery(
+    { brandId: brandId! },
+    { enabled: false }
+  );
+
+  const handleFacebookCallback = trpc.meta.handleFacebookCallback.useMutation({
     onSuccess: (data) => {
-      setMetaPages(data.pages as MetaPage[]);
-      setMetaConnecting(false);
+      setFbPages(data.pages as FbPage[]);
+      setFbConnecting(false);
       if (data.pages.length === 0) {
         toast.error("No Facebook Pages found on this account");
       } else if (data.pages.length === 1) {
-        handleMetaPageConnect(data.pages[0] as MetaPage);
+        handleFacebookPageConnect(data.pages[0] as FbPage);
       } else {
-        setMetaPageOpen(true);
+        setFbPageOpen(true);
       }
     },
     onError: (e) => {
-      setMetaConnecting(false);
-      toast.error(`Meta connect failed: ${e.message}`);
+      setFbConnecting(false);
+      toast.error(`Facebook connect failed: ${e.message}`);
+    },
+  });
+
+  const handleInstagramCallback = trpc.meta.handleInstagramCallback.useMutation({
+    onSuccess: (data) => {
+      if (!brandId) return;
+      connectAccount.mutate({
+        brandId,
+        platform: "instagram",
+        platformAccountId: data.account.id,
+        accountName: data.account.username || data.account.name,
+        accessToken: data.account.accessToken,
+        instagramBusinessId: data.account.id,
+      });
+      setIgConnecting(false);
+    },
+    onError: (e) => {
+      setIgConnecting(false);
+      toast.error(`Instagram connect failed: ${e.message}`);
     },
   });
 
@@ -171,7 +198,7 @@ export default function AdminSocial() {
     });
   }, [brandId, gbpConnect]);
 
-  // Listen for OAuth popup postMessage (both GBP and Meta)
+  // Listen for OAuth popup postMessage (GBP, Facebook, and Instagram)
   useEffect(() => {
     const handler = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
@@ -187,19 +214,21 @@ export default function AdminSocial() {
       } else if (data.type === "GBP_OAUTH_ERROR") {
         setGbpConnecting(false);
         toast.error(`Google OAuth error: ${data.error}`);
-      } else if (data.type === "META_OAUTH_CODE" && data.code && brandId) {
-        handleMetaCallback.mutate({
-          brandId,
-          code: data.code,
-        });
-      } else if (data.type === "META_OAUTH_ERROR") {
-        setMetaConnecting(false);
+      } else if (data.type === "FB_OAUTH_CODE" && data.code && brandId) {
+        handleFacebookCallback.mutate({ brandId, code: data.code });
+      } else if (data.type === "FB_OAUTH_ERROR") {
+        setFbConnecting(false);
         toast.error(`Facebook OAuth error: ${data.error}`);
+      } else if (data.type === "IG_OAUTH_CODE" && data.code && brandId) {
+        handleInstagramCallback.mutate({ brandId, code: data.code });
+      } else if (data.type === "IG_OAUTH_ERROR") {
+        setIgConnecting(false);
+        toast.error(`Instagram OAuth error: ${data.error}`);
       }
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [brandId, handleGbpCallback, handleMetaCallback]);
+  }, [brandId, handleGbpCallback, handleFacebookCallback, handleInstagramCallback]);
 
   const handleGbpOAuthClick = async () => {
     if (!brandId) return;
@@ -215,9 +244,8 @@ export default function AdminSocial() {
     }
   };
 
-  const handleMetaPageConnect = useCallback((page: MetaPage) => {
+  const handleFacebookPageConnect = useCallback((page: FbPage) => {
     if (!brandId) return;
-    // Always connect the Facebook Page
     connectAccount.mutate({
       brandId,
       platform: "facebook",
@@ -226,32 +254,35 @@ export default function AdminSocial() {
       accessToken: page.access_token,
       pageId: page.id,
     });
-    // Auto-connect linked Instagram Business Account if present
-    if (page.instagramAccount) {
-      connectAccount.mutate({
-        brandId,
-        platform: "instagram",
-        platformAccountId: page.instagramAccount.id,
-        accountName: page.instagramAccount.username || page.instagramAccount.name || page.name,
-        accessToken: page.access_token,
-        instagramBusinessId: page.instagramAccount.id,
-      });
-    }
-    setMetaPageOpen(false);
-    setMetaPages([]);
+    setFbPageOpen(false);
+    setFbPages([]);
   }, [brandId, connectAccount]);
 
-  const handleMetaOAuthClick = async () => {
+  const handleFacebookOAuthClick = async () => {
     if (!brandId) return;
-    setMetaConnecting(true);
+    setFbConnecting(true);
     try {
-      const result = await getMetaOAuthUrl.refetch();
+      const result = await getFacebookOAuthUrl.refetch();
       const url = result.data?.url;
-      if (!url) throw new Error("Could not get Meta OAuth URL");
-      window.open(url, "meta_oauth", "width=600,height=700,noopener");
+      if (!url) throw new Error("Could not get Facebook OAuth URL");
+      window.open(url, "fb_oauth", "width=600,height=700,noopener");
     } catch (e: any) {
-      setMetaConnecting(false);
+      setFbConnecting(false);
       toast.error(`Failed to start Facebook OAuth: ${e.message}`);
+    }
+  };
+
+  const handleInstagramOAuthClick = async () => {
+    if (!brandId) return;
+    setIgConnecting(true);
+    try {
+      const result = await getInstagramOAuthUrl.refetch();
+      const url = result.data?.url;
+      if (!url) throw new Error("Could not get Instagram OAuth URL");
+      window.open(url, "ig_oauth", "width=600,height=700,noopener");
+    } catch (e: any) {
+      setIgConnecting(false);
+      toast.error(`Failed to start Instagram OAuth: ${e.message}`);
     }
   };
 
@@ -326,19 +357,31 @@ export default function AdminSocial() {
                 <div className="flex-1">
                   <p className="text-sm font-medium mb-1">Meta API Integration</p>
                   <p className="text-xs text-muted-foreground mb-3">
-                    Connect Facebook Pages and Instagram Business accounts via Meta Graph API.
+                    Connect Facebook Pages and Instagram Business accounts independently via their dedicated OAuth flows.
                   </p>
                   <div className="flex items-center gap-3 mb-2">
                     <Button
                       variant="outline" size="sm"
                       className="gap-2 border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
-                      onClick={handleMetaOAuthClick}
-                      disabled={metaConnecting || handleMetaCallback.isPending}
+                      onClick={handleFacebookOAuthClick}
+                      disabled={fbConnecting || handleFacebookCallback.isPending}
                     >
-                      {(metaConnecting || handleMetaCallback.isPending) ? (
+                      {(fbConnecting || handleFacebookCallback.isPending) ? (
                         <><Loader2 className="h-4 w-4 animate-spin" /> Connecting...</>
                       ) : (
-                        <><Facebook className="h-4 w-4" /> Connect Facebook &amp; Instagram</>
+                        <><Facebook className="h-4 w-4" /> Connect Facebook Page</>
+                      )}
+                    </Button>
+                    <Button
+                      variant="outline" size="sm"
+                      className="gap-2 border-pink-500/30 text-pink-400 hover:bg-pink-500/10"
+                      onClick={handleInstagramOAuthClick}
+                      disabled={igConnecting || handleInstagramCallback.isPending}
+                    >
+                      {(igConnecting || handleInstagramCallback.isPending) ? (
+                        <><Loader2 className="h-4 w-4 animate-spin" /> Connecting...</>
+                      ) : (
+                        <><Instagram className="h-4 w-4" /> Connect Instagram Business</>
                       )}
                     </Button>
                   </div>
@@ -661,8 +704,8 @@ export default function AdminSocial() {
         </DialogContent>
       </Dialog>
 
-      {/* Meta Page Selector Dialog */}
-      <Dialog open={metaPageOpen} onOpenChange={setMetaPageOpen}>
+      {/* Facebook Page Selector Dialog */}
+      <Dialog open={fbPageOpen} onOpenChange={setFbPageOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -671,26 +714,18 @@ export default function AdminSocial() {
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Choose which Page to connect. Facebook and any linked Instagram Business Account will both be connected automatically.
+            Choose which Page to connect for publishing. To connect Instagram, use the separate Instagram flow.
           </p>
           <div className="space-y-2 max-h-72 overflow-y-auto">
-            {metaPages.map((page) => (
+            {fbPages.map((page) => (
               <button
                 key={page.id}
                 className="w-full text-left px-4 py-3 rounded-lg border border-border hover:border-primary/50 hover:bg-secondary/50 transition-colors"
-                onClick={() => handleMetaPageConnect(page)}
+                onClick={() => handleFacebookPageConnect(page)}
                 disabled={connectAccount.isPending}
               >
                 <p className="text-sm font-medium">{page.name}</p>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-xs text-muted-foreground">Facebook Page</span>
-                  {page.instagramAccount && (
-                    <span className="text-xs text-pink-400 flex items-center gap-1">
-                      <Instagram className="h-3 w-3" />
-                      {page.instagramAccount.username || page.instagramAccount.name || "Instagram"}
-                    </span>
-                  )}
-                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">{page.category || "Facebook Page"}</p>
               </button>
             ))}
           </div>

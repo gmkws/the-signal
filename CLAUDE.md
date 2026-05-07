@@ -91,6 +91,41 @@ Replaced `dall-e-3` due to OpenAI deprecation effective 2025-05-12.
 
 Endpoint (`https://api.openai.com/v1/images/generations`) and response shape (`data[0].b64_json`) are unchanged.
 
+## Meta OAuth Architecture — Dual-Flow (updated 2026-05-06)
+
+Two completely independent OAuth flows. They share the same Meta App ID / App Secret
+but use different OAuth endpoints, redirect URIs, and scope sets.
+
+### Facebook Flow
+- **Auth endpoint:** `https://www.facebook.com/v19.0/dialog/oauth`
+- **Callback:** `https://thesignal.gmkwebsolutions.com/api/meta/facebook/callback`
+- **Scopes (Graph API names):** `public_profile, pages_show_list, pages_manage_posts, pages_read_engagement`
+- **config_id:** `2079086999617974` (required for Facebook Login for Business / domain auth)
+- **postMessage type:** `FB_OAUTH_CODE` / `FB_OAUTH_ERROR`
+- **tRPC:** `meta.getFacebookOAuthUrl` + `meta.handleFacebookCallback`
+- **Token exchange:** Graph API → long-lived user token → `/me/accounts` → page tokens saved
+
+### Instagram Flow
+- **Auth endpoint:** `https://www.instagram.com/oauth/authorize`
+- **Callback:** `https://thesignal.gmkwebsolutions.com/api/meta/instagram/callback`
+- **Scopes (Instagram Business API names):** `instagram_business_basic, instagram_business_content_publish`
+- **No config_id** — standard Instagram Login for Business flow
+- **postMessage type:** `IG_OAUTH_CODE` / `IG_OAUTH_ERROR`
+- **tRPC:** `meta.getInstagramOAuthUrl` + `meta.handleInstagramCallback`
+- **Token exchange:** `api.instagram.com` short-lived → `graph.instagram.com` long-lived → `/me` profile
+
+### Why split?
+Facebook Graph API and the Instagram Business API have incompatible scope namespaces.
+Requesting `instagram_business_*` scopes via `facebook.com/dialog/oauth` causes invalid-scope
+errors; requesting `pages_*` scopes via `instagram.com/oauth/authorize` is ignored.
+Separate flows with separate callbacks eliminates the conflict entirely.
+
+### App credentials
+- **App ID:** `1660350928634461` (Test App — used while main app is in Published/locked mode)
+- **App Secret:** Railway env var `META_APP_SECRET` — never committed to the repo
+
+---
+
 ## Privacy Policy Page (added 2026-05-06)
 
 Added a public `/privacy` route required for Meta Developer portal submission.
