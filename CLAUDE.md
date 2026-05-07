@@ -106,7 +106,7 @@ but use different OAuth endpoints, redirect URIs, and scope sets.
 - **Token exchange:** Graph API → long-lived user token → `/me/accounts` → page tokens saved
 
 ### Instagram Flow
-- **Auth endpoint:** `https://www.instagram.com/oauth/authorize`
+- **Auth endpoint:** `https://api.instagram.com/oauth/authorize`
 - **Callback:** `https://thesignal.gmkwebsolutions.com/api/meta/instagram/callback`
 - **Scopes (Instagram Business API names):** `instagram_business_basic, instagram_business_content_publish`
 - **No config_id** — standard Instagram Login for Business flow
