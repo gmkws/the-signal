@@ -1,5 +1,4 @@
 import { trpc } from "@/lib/trpc";
-import { META_APP_ID } from "@shared/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -386,7 +385,7 @@ export default function AdminSocial() {
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Meta App ID: <code className="text-primary">{META_APP_ID}</code>
+                    Facebook uses the Main Meta App · Instagram uses the Instagram Login App
                   </p>
                 </div>
               </div>

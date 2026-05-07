@@ -59,6 +59,10 @@ location selector dialog, following the same layout as the Meta OAuth card.
 ## Key Environment Variables
 | Variable | Purpose |
 |---|---|
+| `META_APP_ID` | Facebook OAuth — Main Production Meta App ID |
+| `META_APP_SECRET` | Facebook OAuth — Main Production Meta App Secret |
+| `INSTAGRAM_APP_ID` | Instagram OAuth — Instagram Login App ID |
+| `INSTAGRAM_APP_SECRET` | Instagram OAuth — Instagram Login App Secret |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
 | `OPENAI_API_KEY` | AI content generation + image generation (gpt-image-1) |
@@ -91,40 +95,48 @@ Replaced `dall-e-3` due to OpenAI deprecation effective 2025-05-12.
 
 Endpoint (`https://api.openai.com/v1/images/generations`) and response shape (`data[0].b64_json`) are unchanged.
 
-## Meta OAuth Architecture — Dual-Flow (updated 2026-05-07)
+## Meta OAuth Architecture — Split-App Dual-Flow (updated 2026-05-07)
 
-Two independent OAuth flows sharing the same Meta App ID / App Secret.
-**Both buttons route through `https://www.facebook.com/v19.0/dialog/oauth`** because
-the App Type is restricted to the Instagram Graph API, which requires Facebook Login
-as a bridge. Direct `instagram.com` OAuth is not available for this app type.
+Two fully independent OAuth flows using **separate app credentials**. Facebook uses the
+Main Production Meta App; Instagram uses the dedicated "Instagram API with Instagram Login"
+product (its own App ID and Secret). The two flows share no credentials and hit different
+authorization servers.
 
-### Facebook Flow
+### Facebook Flow (Main Meta App)
+- **App credentials:** `process.env.META_APP_ID` / `process.env.META_APP_SECRET`
 - **Auth endpoint:** `https://www.facebook.com/v19.0/dialog/oauth`
 - **Callback:** `https://thesignal.gmkwebsolutions.com/api/meta/facebook/callback`
 - **Scopes:** `public_profile, pages_show_list, pages_manage_posts, pages_read_engagement`
 - **No config_id** — removed; was causing UI hijacking
 - **postMessage type:** `FB_OAUTH_CODE` / `FB_OAUTH_ERROR`
 - **tRPC:** `meta.getFacebookOAuthUrl` + `meta.handleFacebookCallback`
-- **Token exchange:** Graph API → long-lived user token → `/me/accounts` → page tokens saved
+- **Token exchange:** FB Graph API code → short-lived user token → long-lived (~60d) via `fb_exchange_token` → `/me/accounts` → page access tokens saved
 
-### Instagram Flow
-- **Auth endpoint:** `https://www.facebook.com/v19.0/dialog/oauth` (same as Facebook)
+### Instagram Flow (Instagram Login Product)
+- **App credentials:** `process.env.INSTAGRAM_APP_ID` / `process.env.INSTAGRAM_APP_SECRET`
+- **Auth endpoint:** `https://www.instagram.com/oauth/authorize` (direct — no Facebook bridge)
 - **Callback:** `https://thesignal.gmkwebsolutions.com/api/meta/instagram/callback`
-- **Scopes:** `public_profile, pages_show_list, pages_read_engagement, instagram_basic, instagram_content_publish`
-  - Note: `instagram_business_*` scopes belong to the direct Instagram Login product which is unavailable for this app type
+- **Scopes:** `instagram_business_basic, instagram_business_content_publish`
 - **postMessage type:** `IG_OAUTH_CODE` / `IG_OAUTH_ERROR`
 - **tRPC:** `meta.getInstagramOAuthUrl` + `meta.handleInstagramCallback`
-- **Token exchange:** Facebook Graph API code → long-lived FB user token → `/me/accounts` pages → `instagram_business_account` field → returns IG Business Account ID + page access token
+- **Token exchange (3-step, no FB Graph):**
+  1. POST `https://api.instagram.com/oauth/access_token` (form-encoded) → short-lived token + `user_id`
+  2. GET `https://graph.instagram.com/access_token?grant_type=ig_exchange_token` → long-lived token (~60d)
+  3. GET `https://graph.instagram.com/me?fields=id,name,username` → account info
 
-### Why both use facebook.com?
-The Meta App Type is "Instagram Graph API". This type requires Facebook Login as the
-authorization bridge — it cannot issue tokens directly from `instagram.com/oauth/authorize`.
-The Instagram flow uses a distinct scope set (`instagram_basic, instagram_content_publish`)
-and a distinct redirect URI so the two callbacks remain independent.
+### Why the split?
+The Facebook flow is a standard Meta/Facebook Login app (pages + publishing permissions).
+The Instagram flow now uses the **"Instagram API with Instagram Login"** product — a separate
+Meta app type that authorizes directly via `instagram.com` without requiring a Facebook Page
+as a bridge. `instagram_business_*` scopes are only available through this product.
 
-### App credentials
-- **App ID:** `1660350928634461` (Test App — used while main app is in Published/locked mode)
-- **App Secret:** Railway env var `META_APP_SECRET` — never committed to the repo
+### Environment variables (Railway)
+| Variable | Used by |
+|---|---|
+| `META_APP_ID` | Facebook flow — Main Production Meta App ID |
+| `META_APP_SECRET` | Facebook flow — Main Production Meta App Secret |
+| `INSTAGRAM_APP_ID` | Instagram flow — Instagram Login App ID |
+| `INSTAGRAM_APP_SECRET` | Instagram flow — Instagram Login App Secret |
 
 ---
 
