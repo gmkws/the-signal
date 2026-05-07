@@ -95,7 +95,7 @@ export default function AdminSocial() {
   );
 
   const getMetaOAuthUrl = trpc.meta.getOAuthUrl.useQuery(
-    { brandId: brandId!, redirectUri: window.location.origin + "/api/meta/callback" },
+    { brandId: brandId! },
     { enabled: false }
   );
 
@@ -191,7 +191,6 @@ export default function AdminSocial() {
         handleMetaCallback.mutate({
           brandId,
           code: data.code,
-          redirectUri: data.redirectUri || (window.location.origin + "/api/meta/callback"),
         });
       } else if (data.type === "META_OAUTH_ERROR") {
         setMetaConnecting(false);

@@ -1716,19 +1716,23 @@ const gbpRouter = router({
 
 // ── Meta OAuth Router ─────────────────────────────────────────────────────
 const GRAPH_API_OAUTH_VERSION = "v19.0";
+const META_REDIRECT_URI = "https://thesignal.gmkwebsolutions.com/api/meta/callback";
+const META_OAUTH_SCOPES = "instagram_business_basic,instagram_business_content_publish,pages_show_list,pages_manage_posts,pages_read_engagement,public_profile";
 
 const metaRouter = router({
   /**
    * Build a Facebook OAuth authorisation URL. The brandId is embedded in
    * the `state` parameter so the callback can pass it back via postMessage.
+   * redirect_uri is hardcoded to the production URL so it always matches
+   * the value registered in Meta's app settings.
    */
   getOAuthUrl: adminProcedure
-    .input(z.object({ brandId: z.number(), redirectUri: z.string() }))
+    .input(z.object({ brandId: z.number() }))
     .query(({ input }) => {
       const url = new URL(`https://www.facebook.com/${GRAPH_API_OAUTH_VERSION}/dialog/oauth`);
       url.searchParams.set("client_id", META_APP_ID);
-      url.searchParams.set("redirect_uri", input.redirectUri);
-      url.searchParams.set("scope", "instagram_basic,instagram_content_publish,pages_show_list,pages_manage_posts,pages_read_engagement");
+      url.searchParams.set("redirect_uri", META_REDIRECT_URI);
+      url.searchParams.set("scope", META_OAUTH_SCOPES);
       url.searchParams.set("response_type", "code");
       url.searchParams.set("state", input.brandId.toString());
       return { url: url.toString() };
@@ -1740,7 +1744,7 @@ const metaRouter = router({
    * Instagram Business Accounts.
    */
   handleCallback: adminProcedure
-    .input(z.object({ brandId: z.number(), code: z.string(), redirectUri: z.string() }))
+    .input(z.object({ brandId: z.number(), code: z.string() }))
     .mutation(async ({ input }) => {
       const appSecret = process.env.META_APP_SECRET;
       if (!appSecret) {
@@ -1751,7 +1755,7 @@ const metaRouter = router({
       const tokenUrl = new URL(`https://graph.facebook.com/${GRAPH_API_OAUTH_VERSION}/oauth/access_token`);
       tokenUrl.searchParams.set("client_id", META_APP_ID);
       tokenUrl.searchParams.set("client_secret", appSecret);
-      tokenUrl.searchParams.set("redirect_uri", input.redirectUri);
+      tokenUrl.searchParams.set("redirect_uri", META_REDIRECT_URI);
       tokenUrl.searchParams.set("code", input.code);
 
       const tokenRes = await fetch(tokenUrl.toString());
