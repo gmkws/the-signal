@@ -61,6 +61,7 @@ export async function getUserPages(accessToken: string): Promise<FacebookPage[]>
     throw new Error(`Failed to get user pages: ${JSON.stringify(error)}`);
   }
   const data = await response.json();
+  console.log('🚨 META API RAW PAGES:', JSON.stringify(data, null, 2));
   return data.data || [];
 }
 

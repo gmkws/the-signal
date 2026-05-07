@@ -1739,6 +1739,7 @@ const metaRouter = router({
       url.searchParams.set("scope", META_FACEBOOK_SCOPES);
       url.searchParams.set("response_type", "code");
       url.searchParams.set("state", input.brandId.toString());
+      url.searchParams.set("auth_type", "rerequest");
       return { url: url.toString() };
     }),
 
