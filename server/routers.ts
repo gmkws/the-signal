@@ -1715,17 +1715,20 @@ const gbpRouter = router({
 });
 
 // ── Meta OAuth Router ─────────────────────────────────────────────────────
-// Two independent flows: Facebook (Graph API) and Instagram (Instagram API).
-// They share the same App ID / Secret but use different OAuth endpoints,
-// redirect URIs, and scope sets to avoid conflicts.
+// Both flows route through facebook.com/v19.0/dialog/oauth because the Meta
+// App Type is restricted to the Instagram Graph API, which requires Facebook
+// Login as a bridge. Direct instagram.com OAuth is not available for this
+// app type.
 const GRAPH_API_OAUTH_VERSION = "v19.0";
-const META_CONFIG_ID = "2079086999617974";
 
 const META_FACEBOOK_REDIRECT_URI = "https://thesignal.gmkwebsolutions.com/api/meta/facebook/callback";
 const META_FACEBOOK_SCOPES = "public_profile,pages_show_list,pages_manage_posts,pages_read_engagement";
 
 const META_INSTAGRAM_REDIRECT_URI = "https://thesignal.gmkwebsolutions.com/api/meta/instagram/callback";
-const META_INSTAGRAM_SCOPES = "instagram_business_basic,instagram_business_content_publish";
+// instagram_basic + instagram_content_publish are the correct Graph API scope
+// names for this app type. instagram_business_* belong to the direct Instagram
+// Login product which is not available here.
+const META_INSTAGRAM_SCOPES = "public_profile,pages_show_list,pages_read_engagement,instagram_basic,instagram_content_publish";
 
 const metaRouter = router({
   // ── Facebook Flow ──────────────────────────────────────────────────────
@@ -1735,7 +1738,6 @@ const metaRouter = router({
     .query(({ input }) => {
       const url = new URL(`https://www.facebook.com/${GRAPH_API_OAUTH_VERSION}/dialog/oauth`);
       url.searchParams.set("client_id", META_APP_ID);
-      url.searchParams.set("config_id", META_CONFIG_ID);
       url.searchParams.set("redirect_uri", META_FACEBOOK_REDIRECT_URI);
       url.searchParams.set("scope", META_FACEBOOK_SCOPES);
       url.searchParams.set("response_type", "code");
@@ -1782,7 +1784,7 @@ const metaRouter = router({
   getInstagramOAuthUrl: adminProcedure
     .input(z.object({ brandId: z.number() }))
     .query(({ input }) => {
-      const url = new URL("https://www.instagram.com/oauth/authorize");
+      const url = new URL(`https://www.facebook.com/${GRAPH_API_OAUTH_VERSION}/dialog/oauth`);
       url.searchParams.set("client_id", META_APP_ID);
       url.searchParams.set("redirect_uri", META_INSTAGRAM_REDIRECT_URI);
       url.searchParams.set("scope", META_INSTAGRAM_SCOPES);
@@ -1799,57 +1801,46 @@ const metaRouter = router({
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "META_APP_SECRET is not configured on the server" });
       }
 
-      // Step 1: exchange code → short-lived IG user token (form-encoded POST)
-      const tokenBody = new URLSearchParams();
-      tokenBody.set("client_id", META_APP_ID);
-      tokenBody.set("client_secret", appSecret);
-      tokenBody.set("grant_type", "authorization_code");
-      tokenBody.set("redirect_uri", META_INSTAGRAM_REDIRECT_URI);
-      tokenBody.set("code", input.code);
+      // Exchange code → short-lived Facebook user token via Graph API.
+      // The code came from facebook.com/dialog/oauth using the IG redirect URI.
+      const tokenUrl = new URL(`https://graph.facebook.com/${GRAPH_API_OAUTH_VERSION}/oauth/access_token`);
+      tokenUrl.searchParams.set("client_id", META_APP_ID);
+      tokenUrl.searchParams.set("client_secret", appSecret);
+      tokenUrl.searchParams.set("redirect_uri", META_INSTAGRAM_REDIRECT_URI);
+      tokenUrl.searchParams.set("code", input.code);
 
-      const tokenRes = await fetch("https://api.instagram.com/oauth/access_token", {
-        method: "POST",
-        body: tokenBody,
-      });
+      const tokenRes = await fetch(tokenUrl.toString());
       if (!tokenRes.ok) {
         const err = await tokenRes.json().catch(() => ({})) as Record<string, unknown>;
         throw new TRPCError({ code: "BAD_REQUEST", message: `Instagram token exchange failed: ${JSON.stringify(err)}` });
       }
-      const { access_token: shortLivedToken } = await tokenRes.json() as { access_token: string; user_id: number };
+      const { access_token: shortLivedToken } = await tokenRes.json() as { access_token: string };
 
-      // Step 2: exchange short-lived → long-lived IG token (~60 days)
-      const longLivedUrl = new URL("https://graph.instagram.com/access_token");
-      longLivedUrl.searchParams.set("grant_type", "ig_exchange_token");
-      longLivedUrl.searchParams.set("client_secret", appSecret);
-      longLivedUrl.searchParams.set("access_token", shortLivedToken);
+      // Extend to long-lived Facebook user token (~60 days)
+      const longLived = await exchangeForLongLivedToken(shortLivedToken, META_APP_ID, appSecret);
 
-      const longLivedRes = await fetch(longLivedUrl.toString());
-      if (!longLivedRes.ok) {
-        const err = await longLivedRes.json().catch(() => ({})) as Record<string, unknown>;
-        throw new TRPCError({ code: "BAD_REQUEST", message: `Instagram long-lived token exchange failed: ${JSON.stringify(err)}` });
+      // Walk through the user's Facebook Pages to find the linked Instagram
+      // Business Account. The page access token is what the Graph API uses for
+      // publishing to /{ig-account-id}/media and /media_publish.
+      const pages = await getUserPages(longLived.access_token);
+      for (const page of pages) {
+        const igAccount = await getInstagramAccount(page.id, page.access_token);
+        if (igAccount) {
+          return {
+            account: {
+              id: igAccount.id,
+              name: igAccount.name || igAccount.username || "Instagram Business Account",
+              username: igAccount.username,
+              accessToken: page.access_token,
+            },
+          };
+        }
       }
-      const { access_token: longLivedToken } = await longLivedRes.json() as { access_token: string };
 
-      // Step 3: fetch IG user profile
-      const userUrl = new URL("https://graph.instagram.com/me");
-      userUrl.searchParams.set("fields", "id,name,username");
-      userUrl.searchParams.set("access_token", longLivedToken);
-
-      const userRes = await fetch(userUrl.toString());
-      if (!userRes.ok) {
-        const err = await userRes.json().catch(() => ({})) as Record<string, unknown>;
-        throw new TRPCError({ code: "BAD_REQUEST", message: `Failed to fetch Instagram profile: ${JSON.stringify(err)}` });
-      }
-      const igUser = await userRes.json() as { id: string; name?: string; username?: string };
-
-      return {
-        account: {
-          id: igUser.id,
-          name: igUser.name || igUser.username || "Instagram Account",
-          username: igUser.username,
-          accessToken: longLivedToken,
-        },
-      };
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "No Instagram Business Account found. Make sure your Facebook Page is linked to an Instagram Business Account in Meta Business Suite.",
+      });
     }),
 });
 

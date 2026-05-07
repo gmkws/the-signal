@@ -91,34 +91,36 @@ Replaced `dall-e-3` due to OpenAI deprecation effective 2025-05-12.
 
 Endpoint (`https://api.openai.com/v1/images/generations`) and response shape (`data[0].b64_json`) are unchanged.
 
-## Meta OAuth Architecture — Dual-Flow (updated 2026-05-06)
+## Meta OAuth Architecture — Dual-Flow (updated 2026-05-07)
 
-Two completely independent OAuth flows. They share the same Meta App ID / App Secret
-but use different OAuth endpoints, redirect URIs, and scope sets.
+Two independent OAuth flows sharing the same Meta App ID / App Secret.
+**Both buttons route through `https://www.facebook.com/v19.0/dialog/oauth`** because
+the App Type is restricted to the Instagram Graph API, which requires Facebook Login
+as a bridge. Direct `instagram.com` OAuth is not available for this app type.
 
 ### Facebook Flow
 - **Auth endpoint:** `https://www.facebook.com/v19.0/dialog/oauth`
 - **Callback:** `https://thesignal.gmkwebsolutions.com/api/meta/facebook/callback`
-- **Scopes (Graph API names):** `public_profile, pages_show_list, pages_manage_posts, pages_read_engagement`
-- **config_id:** `2079086999617974` (required for Facebook Login for Business / domain auth)
+- **Scopes:** `public_profile, pages_show_list, pages_manage_posts, pages_read_engagement`
+- **No config_id** — removed; was causing UI hijacking
 - **postMessage type:** `FB_OAUTH_CODE` / `FB_OAUTH_ERROR`
 - **tRPC:** `meta.getFacebookOAuthUrl` + `meta.handleFacebookCallback`
 - **Token exchange:** Graph API → long-lived user token → `/me/accounts` → page tokens saved
 
 ### Instagram Flow
-- **Auth endpoint:** `https://www.instagram.com/oauth/authorize` ⚠️ must be `www.` — `api.` causes a 404 popup
+- **Auth endpoint:** `https://www.facebook.com/v19.0/dialog/oauth` (same as Facebook)
 - **Callback:** `https://thesignal.gmkwebsolutions.com/api/meta/instagram/callback`
-- **Scopes (Instagram Business API names):** `instagram_business_basic, instagram_business_content_publish`
-- **No config_id** — standard Instagram Login for Business flow
+- **Scopes:** `public_profile, pages_show_list, pages_read_engagement, instagram_basic, instagram_content_publish`
+  - Note: `instagram_business_*` scopes belong to the direct Instagram Login product which is unavailable for this app type
 - **postMessage type:** `IG_OAUTH_CODE` / `IG_OAUTH_ERROR`
 - **tRPC:** `meta.getInstagramOAuthUrl` + `meta.handleInstagramCallback`
-- **Token exchange:** `api.instagram.com` short-lived → `graph.instagram.com` long-lived → `/me` profile
+- **Token exchange:** Facebook Graph API code → long-lived FB user token → `/me/accounts` pages → `instagram_business_account` field → returns IG Business Account ID + page access token
 
-### Why split?
-Facebook Graph API and the Instagram Business API have incompatible scope namespaces.
-Requesting `instagram_business_*` scopes via `facebook.com/dialog/oauth` causes invalid-scope
-errors; requesting `pages_*` scopes via `instagram.com/oauth/authorize` is ignored.
-Separate flows with separate callbacks eliminates the conflict entirely.
+### Why both use facebook.com?
+The Meta App Type is "Instagram Graph API". This type requires Facebook Login as the
+authorization bridge — it cannot issue tokens directly from `instagram.com/oauth/authorize`.
+The Instagram flow uses a distinct scope set (`instagram_basic, instagram_content_publish`)
+and a distinct redirect URI so the two callbacks remain independent.
 
 ### App credentials
 - **App ID:** `1660350928634461` (Test App — used while main app is in Published/locked mode)
