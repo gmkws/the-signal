@@ -1782,7 +1782,7 @@ const metaRouter = router({
   getInstagramOAuthUrl: adminProcedure
     .input(z.object({ brandId: z.number() }))
     .query(({ input }) => {
-      const url = new URL("https://api.instagram.com/oauth/authorize");
+      const url = new URL("https://www.instagram.com/oauth/authorize");
       url.searchParams.set("client_id", META_APP_ID);
       url.searchParams.set("redirect_uri", META_INSTAGRAM_REDIRECT_URI);
       url.searchParams.set("scope", META_INSTAGRAM_SCOPES);
