@@ -1717,7 +1717,8 @@ const gbpRouter = router({
 // ── Meta OAuth Router ─────────────────────────────────────────────────────
 const GRAPH_API_OAUTH_VERSION = "v19.0";
 const META_REDIRECT_URI = "https://thesignal.gmkwebsolutions.com/api/meta/callback";
-const META_OAUTH_SCOPES = "instagram_business_basic,instagram_business_content_publish,pages_show_list,pages_manage_posts,pages_read_engagement,public_profile";
+const META_CONFIG_ID = "2079086999617974";
+const META_OAUTH_SCOPES = "public_profile,instagram_basic,instagram_content_publish,pages_show_list,pages_manage_posts,pages_read_engagement";
 
 const metaRouter = router({
   /**
@@ -1731,6 +1732,7 @@ const metaRouter = router({
     .query(({ input }) => {
       const url = new URL(`https://www.facebook.com/${GRAPH_API_OAUTH_VERSION}/dialog/oauth`);
       url.searchParams.set("client_id", META_APP_ID);
+      url.searchParams.set("config_id", META_CONFIG_ID);
       url.searchParams.set("redirect_uri", META_REDIRECT_URI);
       url.searchParams.set("scope", META_OAUTH_SCOPES);
       url.searchParams.set("response_type", "code");
