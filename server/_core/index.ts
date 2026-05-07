@@ -40,6 +40,16 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
 
+  // ── Nuclear intercept — must be the very first middleware ────────────────
+  // If 🚨 [TOP LEVEL] never appears in logs for an /api request, the request
+  // is not reaching Express at all (Railway proxy, CDN, or service worker).
+  app.use((req: express.Request, _res: express.Response, next: express.NextFunction) => {
+    if (req.path.startsWith("/api")) {
+      console.log("🚨 [TOP LEVEL] API Request Intercepted:", req.method, req.path);
+    }
+    next();
+  });
+
   // ── Startup diagnostics ─────────────────────────────────────────────────
   console.log(`[Startup] NODE_ENV=${process.env.NODE_ENV}`);
   console.log(`[Startup] DATABASE_URL=${process.env.DATABASE_URL ? 'SET (' + process.env.DATABASE_URL.replace(/:([^@]+)@/, ':****@') + ')' : 'NOT SET'}`);
