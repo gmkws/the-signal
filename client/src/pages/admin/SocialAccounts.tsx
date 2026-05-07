@@ -200,6 +200,7 @@ export default function AdminSocial() {
   // Listen for OAuth popup postMessage (GBP, Facebook, and Instagram)
   useEffect(() => {
     const handler = (event: MessageEvent) => {
+      console.log('🚨 POSTMESSAGE RECEIVED:', { origin: event.origin, data: event.data });
       if (event.origin !== window.location.origin) return;
       const data = event.data;
       if (!data || typeof data !== "object") return;

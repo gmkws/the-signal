@@ -204,6 +204,7 @@ async function startServer() {
   // facebook.com/dialog/oauth redirects here. Passes the code back to the
   // opener via postMessage; frontend calls trpc.meta.handleFacebookCallback.
   app.get("/api/meta/facebook/callback", (req: express.Request, res: express.Response) => {
+    console.log('🚨 BACKEND HIT: Facebook Callback initiated', req.query);
     const code  = typeof req.query.code  === "string" ? req.query.code  : "";
     const state = typeof req.query.state === "string" ? req.query.state : "";
     const error = typeof req.query.error === "string" ? req.query.error : "";
@@ -212,6 +213,7 @@ async function startServer() {
       ? JSON.stringify({ type: "FB_OAUTH_ERROR", error })
       : JSON.stringify({ type: "FB_OAUTH_CODE", code, state });
 
+    console.log('🚨 BACKEND SUCCESS: Sending postMessage HTML to frontend');
     res.setHeader("Content-Type", "text/html");
     res.send(`<!DOCTYPE html>
 <html>
