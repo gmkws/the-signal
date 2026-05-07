@@ -103,7 +103,7 @@ Replaced `dall-e-3` due to OpenAI deprecation effective 2025-05-12.
 
 Endpoint (`https://api.openai.com/v1/images/generations`) and response shape (`data[0].b64_json`) are unchanged.
 
-## Meta OAuth Architecture — Split-App Dual-Flow (updated 2026-05-07, debugging 2026-05-07)
+## Meta OAuth Architecture — Split-App Dual-Flow (updated 2026-05-07)
 
 Two fully independent OAuth flows using **separate app credentials**. Facebook uses the
 Main Production Meta App; Instagram uses the dedicated "Instagram API with Instagram Login"
@@ -165,17 +165,51 @@ Contact email in the policy: `privacy@gmkwebsolutions.com`.
 
 ---
 
-## OAuth postMessage Debug State (as of 2026-05-07)
+## Meta OAuth Debugging History & Current Status
 
-Temporary diagnostics are in place — **remove when the flow is confirmed working:**
+### Resolved Bugs (2026-05-07)
 
-| File | Diagnostic | Remove when |
+| Bug | Root Cause | Fix |
 |---|---|---|
-| `server/_core/index.ts` | `🚨 BACKEND HIT` + `🚨 BACKEND SUCCESS` logs in FB callback | Flow confirmed working |
-| `server/_core/index.ts` | `🚨 [TOP LEVEL] API Request Intercepted` nuclear intercept | Flow confirmed working |
-| `server/_core/index.ts` | Popup heartbeat `console.log('Sending message to opener:', ...)` in HTML `<script>` | Flow confirmed working |
-| `client/src/pages/admin/SocialAccounts.tsx` | `🚨 POSTMESSAGE RECEIVED` log | Flow confirmed working |
-| `client/src/pages/admin/SocialAccounts.tsx` | Origin check commented out (`event.origin !== window.location.origin`) | **Re-enable this check** once messages are confirmed arriving |
+| Route swallowing — `/api/meta/facebook/callback` served React SPA | `serveStatic` catch-all had no `/api` guard | Added `/api/` path check in both `serveStatic` and `setupVite` catch-alls (`server/_core/vite.ts`) |
+| Silent postMessage failure — frontend spinner never resolved | `noopener` in all three `window.open` calls set `window.opener = null` in the popup | Removed `noopener` from all OAuth popups in `SocialAccounts.tsx` |
+| Facebook skipping permission screen (remembered state) | No `auth_type` param | Added `auth_type=rerequest` to Facebook OAuth URL (`routers.ts` `getFacebookOAuthUrl`) |
+
+### Active Issue: Empty Pages Data (as of 2026-05-07)
+
+`/me/accounts` returns `{"data": []}` — token is valid but no pages are visible.
+
+**Scope string audit (confirmed clean):**
+```
+public_profile,pages_show_list,pages_manage_posts,pages_read_engagement
+```
+No typos, no spaces, no missing commas. Defined as `META_FACEBOOK_SCOPES` in `routers.ts`.
+
+**API version audit (confirmed clean):** `v19.0` in both `routers.ts` (`GRAPH_API_OAUTH_VERSION`) and `meta.ts` (`GRAPH_API_VERSION`).
+
+**Diagnostics in place** — watch Railway logs after next auth attempt:
+
+| Log | Location | What it reveals |
+|---|---|---|
+| `🚨 TOKEN PERMISSIONS:` | `routers.ts` `handleFacebookCallback` | Exact scopes Meta granted vs. requested — if `pages_show_list` is `declined`, the app needs review or the user denied it |
+| `🚨 META API RAW PAGES:` | `meta.ts` `getUserPages` | Raw `/me/accounts` response shape |
+| `🚨 BACKEND HIT` / `🚨 BACKEND SUCCESS` | `server/_core/index.ts` FB callback | Confirm callback route is hit |
+| `🚨 [TOP LEVEL] API Request Intercepted` | `server/_core/index.ts` top of middleware | Confirm Express sees the request |
+| `🚨 POSTMESSAGE RECEIVED` | `SocialAccounts.tsx` | Confirm popup relay works |
+
+**Likely causes of empty pages:**
+1. Meta app is in **Development mode** — only the app developer's own Pages are visible; other users see empty results until the app passes App Review for `pages_show_list`.
+2. The authenticated user is not an **admin** of any Facebook Page (only admins appear in `/me/accounts`).
+3. `pages_show_list` was **declined** by the user during the auth dialog — check TOKEN PERMISSIONS log.
+
+### Cleanup TODO (remove diagnostics once pages load correctly)
+
+| File | Item to clean up |
+|---|---|
+| `server/_core/index.ts` | `🚨 BACKEND HIT`, `🚨 BACKEND SUCCESS`, `🚨 [TOP LEVEL]` logs, popup heartbeat in HTML `<script>` |
+| `server/routers.ts` | `🚨 TOKEN PERMISSIONS` try/catch block |
+| `server/services/meta.ts` | `🚨 META API RAW PAGES` log |
+| `client/src/pages/admin/SocialAccounts.tsx` | `🚨 POSTMESSAGE RECEIVED` log; **re-enable** the commented-out origin check |
 
 ---
 

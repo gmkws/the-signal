@@ -1769,6 +1769,17 @@ const metaRouter = router({
       // Extend to long-lived user token (~60 days)
       const longLived = await exchangeForLongLivedToken(shortLivedToken, appId, appSecret);
 
+      // X-Ray: log exactly which permissions Meta granted for this token
+      try {
+        const permUrl = new URL(`https://graph.facebook.com/${GRAPH_API_OAUTH_VERSION}/me/permissions`);
+        permUrl.searchParams.set("access_token", longLived.access_token);
+        const permRes = await fetch(permUrl.toString());
+        const permissionsResponse = await permRes.json();
+        console.log('🚨 TOKEN PERMISSIONS:', JSON.stringify(permissionsResponse));
+      } catch (e) {
+        console.error('🚨 TOKEN PERMISSIONS fetch failed:', e);
+      }
+
       // Fetch pages this user administers
       const pages = await getUserPages(longLived.access_token);
       if (!pages.length) {
